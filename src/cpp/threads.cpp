@@ -34,7 +34,8 @@ void join_thread(int i) { pthread_join(p_thread[i], 0); }
 void init_threads() {
 #ifdef USE_PTHREADS
   init_mutex();
-  for (int i = 0; i < MEMSHARDS; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < MEMSHARDS; i++)
     pthread_mutex_init(&(memshards[i].mutex), NULL);
 #endif
 }

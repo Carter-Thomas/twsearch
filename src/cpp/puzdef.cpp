@@ -28,17 +28,21 @@ int puzdef::numwrong(const setval a, const setval b, ull mask) const {
   const uchar *ap = a.dat;
   const uchar *bp = b.dat;
   int r = 0;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     int n = sd.size;
     if ((mask >> i) & 1) {
       if (origroup == 0) {
-        for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++)
           if (ap[j] != bp[j] || ap[j + n] != bp[j + n])
             r++;
       } else {
-        for (int j = 0; j < n; j += origroup)
-          for (int k = 0; k < origroup; k++)
+        #pragma acc parallel loop
+for (int j = 0; j < n; j += origroup)
+          #pragma acc parallel loop
+for (int k = 0; k < origroup; k++)
             if (ap[j + k] != bp[j + k]) {
               r++;
               break;
@@ -54,18 +58,22 @@ int puzdef::permwrong(const setval a, const setval b, ull mask) const {
   const uchar *ap = a.dat;
   const uchar *bp = b.dat;
   int r = 0;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     int n = sd.size;
     if ((mask >> i) & 1) {
       if (origroup == 0) {
-        for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++)
           if (ap[j] != bp[j])
             r++;
       } else {
-        for (int j = 0; j < n; j += origroup) {
+        #pragma acc parallel loop
+for (int j = 0; j < n; j += origroup) {
           int sa = 0, sb = 0;
-          for (int k = 0; k < origroup; k++) {
+          #pragma acc parallel loop
+for (int k = 0; k < origroup; k++) {
             sa += ap[j + k];
             sb += bp[j + k];
           }
@@ -82,16 +90,19 @@ int puzdef::permwrong(const setval a, const setval b, ull mask) const {
 vector<int> puzdef::cyccnts(const setval a, ull sets) const {
   const uchar *ap = a.dat;
   vector<int> r;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     int n = sd.size;
     if ((sets >> i) & 1) {
       ull done = 0;
-      for (int j = 0; j < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
         if (0 == ((done >> j) & 1)) {
           int cnt = 0;
           int ori = 0;
-          for (int k = j; 0 == ((done >> k) & 1); k = ap[k]) {
+          #pragma acc parallel loop
+for (int k = j; 0 == ((done >> k) & 1); k = ap[k]) {
             cnt++;
             ori += ap[k + n];
             done |= 1LL << k;
@@ -112,16 +123,19 @@ vector<int> puzdef::cyccnts(const setval a, ull sets) const {
 vector<pair<int, int>> puzdef::cyccnts2(const setval a, ull sets) const {
   const uchar *ap = a.dat;
   vector<pair<int, int>> r;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     int n = sd.size;
     if ((sets >> i) & 1) {
       ull done = 0;
-      for (int j = 0; j < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
         if (0 == ((done >> j) & 1)) {
           int cnt = 0;
           int ori = 0;
-          for (int k = j; 0 == ((done >> k) & 1); k = ap[k]) {
+          #pragma acc parallel loop
+for (int k = j; 0 == ((done >> k) & 1); k = ap[k]) {
             cnt++;
             ori += ap[k + n];
             done |= 1LL << k;
@@ -137,7 +151,8 @@ vector<pair<int, int>> puzdef::cyccnts2(const setval a, ull sets) const {
 }
 ll puzdef::order(const vector<int> cc) {
   ll r = 1;
-  for (int i = 2; i < (int)cc.size(); i++)
+  #pragma acc parallel loop
+for (int i = 2; i < (int)cc.size(); i++)
     if (cc[i])
       r = lcm(r, i);
   return r;
@@ -149,7 +164,8 @@ void puzdef::addillegal(const string &setname, int pos, int val) {
     error("! value in illegal must be strictly positive.");
   haveillegal = 1;
   int rpos = -1;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     if (sd.name == setname) {
       if (pos <= 0 || pos > sd.size)
@@ -170,17 +186,20 @@ void puzdef::addillegal(const string &setname, int pos, int val) {
 void puzdef::inv(const setval a, setval b) const {
   const uchar *ap = a.dat;
   uchar *bp = b.dat;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     int n = sd.size;
     if (sd.omod == 1) {
-      for (int j = 0; j < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
         bp[ap[j]] = j;
         bp[j + n] = 0;
       }
     } else {
       uchar *moda = gmoda[sd.omod];
-      for (int j = 0; j < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
         bp[ap[j]] = j;
         bp[ap[j] + n] = moda[sd.omod - ap[j + n]];
       }
@@ -193,7 +212,8 @@ void calculatesizes(puzdef &pd) {
   ull gllstates = 1;
   double glogstates = 0;
   dllstates = 1;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     ull llperms = 1;
     double tllstates = 1;
     ull llords = 1;
@@ -204,15 +224,18 @@ void calculatesizes(puzdef &pd) {
       int st = 2;
       if (sd.pparity)
         st = 3;
-      for (int i = st; i <= n; i++) {
+      #pragma acc parallel loop
+for (int i = st; i <= n; i++) {
         llperms *= i;
         logstates += log2(i);
         dllstates *= i;
       }
     } else {
       int left = n;
-      for (int j = 0; j < (int)sd.cnts.size(); j++) {
-        for (int k = 0; k < sd.cnts[j]; k++) {
+      #pragma acc parallel loop
+for (int j = 0; j < (int)sd.cnts.size(); j++) {
+        #pragma acc parallel loop
+for (int k = 0; k < sd.cnts[j]; k++) {
           llperms *= left;
           logstates += log2(left);
           tllstates *= left;
@@ -233,7 +256,8 @@ void calculatesizes(puzdef &pd) {
       int st = 0;
       if (sd.oparity)
         st++;
-      for (int j = st; j < n; j++) {
+      #pragma acc parallel loop
+for (int j = st; j < n; j++) {
         if (sd.wildo && pd.solved.dat[sd.off + n + j] == 2 * sd.omod) {
           // do nothing; this no-value will stay as such forever
         } else {
@@ -285,14 +309,17 @@ void domove(const puzdef &pd, setval p, int mv, setval pt) {
 }
 int puzdef::defaultstart() const {
   const uchar *a = solved.dat;
-  for (int i = 0; i < (int)setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)setdefs.size(); i++) {
     const setdef &sd = setdefs[i];
     int n = sd.size;
-    for (int i = 0; i < n; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < n; i++)
       if (i != a[i])
         return 0;
     a += n;
-    for (int i = 0; i < n; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < n; i++)
       if (a[i] != 0)
         return 0;
     a += n;

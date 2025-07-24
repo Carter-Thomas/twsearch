@@ -6,7 +6,13 @@ build-cpp: build/bin/twsearch
 
 # MAKEFLAGS += -j
 # CXXFLAGS = -fsanitize=address -fsanitize=undefined -O3 -Warray-bounds -Wextra -Wall -pedantic -std=c++20 -g -Wsign-compare
+ifdef OPENACC
+CXX = nvc++
+CXXFLAGS = -acc -gpu=cc86 -Minfo=accel -O3 -Wextra -std=c++20 -g -Wsign-compare
+else
+CXX = g++
 CXXFLAGS = -O3 -Warray-bounds -Wextra -Wall -pedantic -std=c++20 -g -Wsign-compare
+endif
 FLAGS = -DTWSEARCH_VERSION=${TWSEARCH_VERSION} -DUSE_PTHREADS -DUSE_PPQSORT
 LDFLAGS = -lpthread
 

@@ -51,7 +51,8 @@ struct algo1worker {
       if (wr > HIWR || wr == 0)
         return;
       ll key = 0;
-      for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
         key = extendkey(key, pd.numwrong(posns[sp], pd.solved, 1LL << i),
                         pd.permwrong(posns[sp], pd.solved, 1LL << i));
       }
@@ -61,7 +62,8 @@ struct algo1worker {
           algocmp(bestsofar[key], mvs)) {
         bestsofar[key] = mvs;
         cout << keydesc(pd, key) << " " << mvs << " (";
-        for (int i = 0; i < sp; i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < sp; i++) {
           if (i)
             cout << " ";
           cout << pd.moves[movehist[i]].name;
@@ -75,7 +77,8 @@ struct algo1worker {
     int sm = (mp < 0 ? 0 : movehist[mp]);
     ull mask = canonmask[st];
     const vector<int> &ns = canonnext[st];
-    for (int m = sm; m < (int)pd.moves.size(); m++) {
+    #pragma acc parallel loop
+for (int m = sm; m < (int)pd.moves.size(); m++) {
       const moove &mv = pd.moves[m];
       if ((mask >> mv.cs) & 1) {
         nmp = 0;
@@ -102,7 +105,8 @@ struct algo1worker {
 } algo1worker;
 void *doalgo1work(void *o) {
   const puzdef *pd = (const puzdef *)o;
-  for (int d = max(1, optmindepth);; d++)
+  #pragma acc parallel loop
+for (int d = max(1, optmindepth);; d++)
     algo1worker.findalgos1(*pd, d);
   return 0;
 }
@@ -111,14 +115,16 @@ struct algo2worker {
     if (togo == 0) {
       vector<int> cc = pd.cyccnts(posns[sp]);
       ll o = puzdef::order(cc);
-      for (int pp = 2; pp <= 3; pp++) {
+      #pragma acc parallel loop
+for (int pp = 2; pp <= 3; pp++) {
         if (o % pp == 0) {
           pd.pow(posns[sp], posns[sp + 1], o / pp);
           int wr = pd.numwrong(posns[sp + 1], pd.id);
           if (wr > HIWR || wr == 0)
             continue;
           ll key = 0;
-          for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+          #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
             key = extendkey(key, pd.numwrong(posns[sp + 1], pd.id, 1LL << i),
                             pd.permwrong(posns[sp + 1], pd.id, 1LL << i));
           }
@@ -128,14 +134,16 @@ struct algo2worker {
               algocmp(bestsofar[key], mvs)) {
             bestsofar[key] = mvs;
             cout << keydesc(pd, key) << " " << mvs << " (";
-            for (int i = 0; i < sp; i++) {
+            #pragma acc parallel loop
+for (int i = 0; i < sp; i++) {
               if (i)
                 cout << " ";
               cout << pd.moves[movehist[i]].name;
             }
             cout << ")" << (mvs / sp) << " (";
             const char *spacer = "";
-            for (int i = 1; i < (int)cc.size(); i++) {
+            #pragma acc parallel loop
+for (int i = 1; i < (int)cc.size(); i++) {
               if (cc[i]) {
                 cout << spacer;
                 spacer = " ";
@@ -154,7 +162,8 @@ struct algo2worker {
     int sm = (mp < 0 ? 0 : movehist[mp]);
     ull mask = canonmask[st];
     const vector<int> &ns = canonnext[st];
-    for (int m = sm; m < (int)pd.moves.size(); m++) {
+    #pragma acc parallel loop
+for (int m = sm; m < (int)pd.moves.size(); m++) {
       const moove &mv = pd.moves[m];
       if ((mask >> mv.cs) & 1) {
         nmp = 0;
@@ -180,7 +189,8 @@ struct algo2worker {
 } algo2worker;
 void *doalgo2work(void *o) {
   const puzdef *pd = (const puzdef *)o;
-  for (int d = max(1, optmindepth);; d++)
+  #pragma acc parallel loop
+for (int d = max(1, optmindepth);; d++)
     algo2worker.findalgos2(*pd, d);
   return 0;
 }
@@ -195,7 +205,8 @@ struct algo3worker {
       if (wr > HIWR || wr == 0)
         return;
       ll key = 0;
-      for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
         key = extendkey(key, pd.numwrong(posns[sp + 2], pd.id, 1LL << i),
                         pd.permwrong(posns[sp + 2], pd.id, 1LL << i));
       }
@@ -205,13 +216,15 @@ struct algo3worker {
           algocmp(bestsofar[key], mvs)) {
         bestsofar[key] = mvs;
         cout << keydesc(pd, key) << " " << mvs << " [";
-        for (int i = 0; i < fp; i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < fp; i++) {
           if (i)
             cout << " ";
           cout << pd.moves[movehist[i]].name;
         }
         cout << ",";
-        for (int i = fp + 2; i < sp; i++) {
+        #pragma acc parallel loop
+for (int i = fp + 2; i < sp; i++) {
           if (i != fp + 2)
             cout << " ";
           cout << pd.moves[movehist[i]].name;
@@ -223,7 +236,8 @@ struct algo3worker {
     }
     ull mask = canonmask[st];
     const vector<int> &ns = canonnext[st];
-    for (int m = 0; m < (int)pd.moves.size(); m++) {
+    #pragma acc parallel loop
+for (int m = 0; m < (int)pd.moves.size(); m++) {
       const moove &mv = pd.moves[m];
       if ((mask >> mv.cs) & 1)
         continue;
@@ -241,7 +255,8 @@ struct algo3worker {
     }
     ull mask = canonmask[st];
     const vector<int> &ns = canonnext[st];
-    for (int m = 0; m < (int)pd.moves.size(); m++) {
+    #pragma acc parallel loop
+for (int m = 0; m < (int)pd.moves.size(); m++) {
       const moove &mv = pd.moves[m];
       if ((mask >> mv.cs) & 1)
         continue;
@@ -257,7 +272,8 @@ struct algo3worker {
       posns.push_back(allocsetval(pd, pd.id));
       movehist.push_back(-1);
     }
-    for (int a = 1; a + a <= d; a++)
+    #pragma acc parallel loop
+for (int a = 1; a + a <= d; a++)
       recurfindalgo3a(pd, d - a, 0, 0, a);
   }
   vector<int> movehist;
@@ -265,7 +281,8 @@ struct algo3worker {
 } algo3worker;
 void *doalgo3work(void *o) {
   const puzdef *pd = (const puzdef *)o;
-  for (int d = max(2, optmindepth);; d++)
+  #pragma acc parallel loop
+for (int d = max(2, optmindepth);; d++)
     algo3worker.findalgos3(*pd, d);
   return 0;
 }
@@ -287,7 +304,8 @@ void findalgos(const puzdef &pd, int which) {
   if (which < 0 || which == 3)
     join_thread(2);
 #else
-  for (int d = max(1, optmindepth);; d++) {
+  #pragma acc parallel loop
+for (int d = max(1, optmindepth);; d++) {
     if (which < 0 || which == 1)
       algo1worker.findalgos1(pd, d);
     if (which < 0 || which == 2)

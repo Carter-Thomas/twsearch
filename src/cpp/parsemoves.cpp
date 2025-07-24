@@ -2,30 +2,36 @@
 #include "solve.h"
 #include <iostream>
 allocsetval findmove_generously(const puzdef &pd, const string &mvstring) {
-  for (int i = 0; i < (int)pd.moves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
     if (mvstring == pd.moves[i].name)
       return pd.moves[i].pos;
-  for (int i = 0; i < (int)pd.parsemoves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.parsemoves.size(); i++)
     if (mvstring == pd.parsemoves[i].name)
       return pd.parsemoves[i].pos;
-  for (int i = 0; i < (int)pd.expandedrotations.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.expandedrotations.size(); i++)
     if (mvstring == pd.expandedrotations[i].name)
       return pd.expandedrotations[i].pos;
   error("! bad move name ", mvstring);
   return allocsetval(pd, 0);
 }
 int findmove(const puzdef &pd, const string &mvstring) {
-  for (int i = 0; i < (int)pd.moves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
     if (mvstring == pd.moves[i].name)
       return i;
   error("! bad move name ", mvstring);
   return -1;
 }
 int findmoveorrotation(const puzdef &pd, const string &mvstring) {
-  for (int i = 0; i < (int)pd.moves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
     if (mvstring == pd.moves[i].name)
       return i;
-  for (int i = 0; i < (int)pd.expandedrotations.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.expandedrotations.size(); i++)
     if (mvstring == pd.expandedrotations[i].name)
       return i + pd.moves.size();
   error("! bad move or rotation name ", mvstring);
@@ -109,13 +115,15 @@ int isrotation(const string &mv) {
  */
 int domove_or_rotation_q(const puzdef &pd, setval &sv, setval &tmp,
                          const string &mvstring) {
-  for (int i = 0; i < (int)pd.moves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
     if (mvstring == pd.moves[i].name) {
       pd.mul(sv, pd.moves[i].pos, tmp);
       pd.assignpos(sv, tmp);
       return 1;
     }
-  for (int i = 0; i < (int)pd.expandedrotations.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.expandedrotations.size(); i++)
     if (mvstring == pd.expandedrotations[i].name) {
       pd.mul(sv, pd.expandedrotations[i].pos, tmp);
       pd.assignpos(sv, tmp);

@@ -30,7 +30,8 @@ void beamsearch(const puzdef &pd, setval pos, const char *) {
   dedup[dh] = sc;
   int bestscore = sc;
   stacksetval srcpos(pd), dstpos(pd);
-  for (int len = 1;; len++) {
+  #pragma acc parallel loop
+for (int len = 1;; len++) {
     poslevels.push_back((loosetype *)calloc(sizeof(loosetype), looseperlev));
     posscores.push_back((scoretype *)malloc(sizeof(scoretype) * beamwidth));
     loosetype *dstloose = poslevels[len];
@@ -45,7 +46,8 @@ void beamsearch(const puzdef &pd, setval pos, const char *) {
         continue;
       seen++;
       looseunpack(pd, srcpos, srcloose + i * looseper);
-      for (int m = 0; m < (int)pd.moves.size(); m++) {
+      #pragma acc parallel loop
+for (int m = 0; m < (int)pd.moves.size(); m++) {
         pd.mul(srcpos, pd.moves[m].pos, dstpos);
         h = fasthash(pd.totsize, dstpos);
         sc = score(pd, dstpos);

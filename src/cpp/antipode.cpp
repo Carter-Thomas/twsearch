@@ -17,7 +17,8 @@ void showantipodes(const puzdef &pd, loosetype *beg, loosetype *end) {
   antipodeshave = t;
   cout << "Showing " << antipodeshave << " antipodes." << endl;
   stacksetval pos(pd);
-  for (int i = 0; i < antipodeshave; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < antipodeshave; i++) {
     looseunpack(pd, pos, beg + i * looseper);
     emitposition(pd, pos, nullptr);
   }
@@ -31,7 +32,8 @@ void showantipodesdense(const puzdef &pd, int ordered) {
     error("! no antipodes?");
   cout << "Showing " << antipodeshave << " antipodes." << endl;
   stacksetval pos(pd);
-  for (int i = 0; i < antipodeshave; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < antipodeshave; i++) {
     if (ordered)
       denseunpack_ordered(pd, antipodesdense[i], pos);
     else

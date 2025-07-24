@@ -10,12 +10,14 @@ void timingtest(puzdef &pd) {
   pd.assignpos(p1, pd.solved);
   const int NUMRAND = 65536;
   unsigned short randpool[NUMRAND];
-  for (int i = 0; i < NUMRAND; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < NUMRAND; i++)
     randpool[i] = myrand(pd.moves.size());
   cout << "Timing moves." << endl << flush;
   duration();
   int cnt = 100000000;
-  for (int i = 0; i < cnt; i += 2) {
+  #pragma acc parallel loop
+for (int i = 0; i < cnt; i += 2) {
     int rmv = randpool[i & (NUMRAND - 1)];
     pd.mul(p1, pd.moves[rmv].pos, p2);
     rmv = randpool[1 + (i & (NUMRAND - 1))];
@@ -28,7 +30,8 @@ void timingtest(puzdef &pd) {
   duration();
   cnt = 100000000;
   ull sum = 0;
-  for (int i = 0; i < cnt; i += 2) {
+  #pragma acc parallel loop
+for (int i = 0; i < cnt; i += 2) {
     int rmv = randpool[i & (NUMRAND - 1)];
     pd.mul(p1, pd.moves[rmv].pos, p2);
     sum += fasthash(pd.totsize, p2);
@@ -45,7 +48,8 @@ void timingtest(puzdef &pd) {
     duration();
     cnt = 100000000;
     ull sum = 0;
-    for (int i = 0; i < cnt; i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < cnt; i++) {
       int rmv = randpool[i & (NUMRAND - 1)];
       pd.mul(p1, pd.moves[rmv].pos, p2);
       slowmodm2(pd, p2, p1);
@@ -58,13 +62,15 @@ void timingtest(puzdef &pd) {
   }
   prunetable pt(pd, maxmem);
   duration();
-  for (int tt = 0; tt < 2; tt++) {
+  #pragma acc parallel loop
+for (int tt = 0; tt < 2; tt++) {
     cout << "Timing moves plus lookup." << endl << flush;
     duration();
     cnt = 100000000;
     sum = 0;
     stacksetval looktmp(pd);
-    for (int i = 0; i < cnt; i += 2) {
+    #pragma acc parallel loop
+for (int i = 0; i < cnt; i += 2) {
       int rmv = randpool[i & (NUMRAND - 1)];
       pd.mul(p1, pd.moves[rmv].pos, p2);
       sum += pt.lookup(p2, &looktmp);
@@ -79,16 +85,19 @@ void timingtest(puzdef &pd) {
   }
   const int MAXLOOK = 8;
   ull tgo[MAXLOOK];
-  for (int look = 2; look <= MAXLOOK; look *= 2) {
+  #pragma acc parallel loop
+for (int look = 2; look <= MAXLOOK; look *= 2) {
     int mask = look - 1;
-    for (int i = 0; i < look; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < look; i++)
       tgo[i] = 0;
     cout << "Timing moves plus lookup piped " << look << endl << flush;
     duration();
     cnt = 100000000;
     sum = 0;
     if ((int)pd.rotgroup.size() > 1) {
-      for (int i = 0; i < cnt; i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < cnt; i++) {
         int rmv = randpool[i & (NUMRAND - 1)];
         pd.mul(p1, pd.moves[rmv].pos, p2);
         slowmodm2(pd, p2, p1);
@@ -97,7 +106,8 @@ void timingtest(puzdef &pd) {
         pt.prefetchindexed(tgo[i & mask]);
       }
     } else {
-      for (int i = 0; i < cnt; i += 2) {
+      #pragma acc parallel loop
+for (int i = 0; i < cnt; i += 2) {
         int rmv = randpool[i & (NUMRAND - 1)];
         pd.mul(p1, pd.moves[rmv].pos, p2);
         sum += pt.lookuphindexed(tgo[i & mask]);

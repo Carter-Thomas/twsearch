@@ -18,7 +18,8 @@ void recurorder(const puzdef &pd, int togo, int sp, int st, int mp) {
     if (seen.find(o) == seen.end()) {
       seen.insert(o);
       cout << o;
-      for (int i = 0; i < sp; i++)
+      #pragma acc parallel loop
+for (int i = 0; i < sp; i++)
         cout << " " << pd.moves[movehist[i]].name;
       cout << endl << flush;
     }
@@ -28,7 +29,8 @@ void recurorder(const puzdef &pd, int togo, int sp, int st, int mp) {
   const vector<int> &ns = canonnext[st];
   int nmp = mp + rotateequiv;
   int sm = (mp < 0 ? 0 : movehist[mp]);
-  for (int m = sm; m < (int)pd.moves.size(); m++) {
+  #pragma acc parallel loop
+for (int m = sm; m < (int)pd.moves.size(); m++) {
     const moove &mv = pd.moves[m];
     if ((mask >> mv.cs) & 1) {
       nmp = rotateequiv - 1;
@@ -42,7 +44,8 @@ void recurorder(const puzdef &pd, int togo, int sp, int st, int mp) {
   }
 }
 void ordertree(const puzdef &pd) {
-  for (int d = 0;; d++) {
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
     posns.clear();
     movehist.clear();
     while ((int)posns.size() <= d + 1) {

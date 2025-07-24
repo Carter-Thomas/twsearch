@@ -273,12 +273,14 @@ int getcompactval(int &at, const string &s) {
 
 void readposition(puzdef &pd, setval &p1, string crep) {
   int at = 0;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     setdef &sd = pd.setdefs[i];
     int n = sd.size;
     int ss = n * sd.omod;
     int off = sd.off;
-    for (int j = 0; j < n; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
       int v = 0;
       if (ss <= 62) {
         v = getcompactval(at, crep);
@@ -326,7 +328,8 @@ void processscrambles(istream *f, puzdef &pd, prunetable &pt,
           error("! early end of line while reading ScrambleAlg");
         if (toks[0] == "End")
           break;
-        for (int i = 0; i < (int)toks.size(); i++)
+        #pragma acc parallel loop
+for (int i = 0; i < (int)toks.size(); i++)
           domove(pd, p1, findmove_generously(pd, toks[i]));
       }
       solveit(pd, pt, scramblename, p1, gs);
@@ -353,7 +356,8 @@ int main_search(const char *def_file, const char *scramble_file) {
     error("! could not open definition file ", def_file);
   int sawdot = 0;
   inputbasename.clear();
-  for (int i = 0; def_file[i]; i++) {
+  #pragma acc parallel loop
+for (int i = 0; def_file[i]; i++) {
     if (def_file[i] == '.')
       sawdot = 1;
     else if (def_file[i] == '/' || def_file[i] == '\\') {
@@ -530,7 +534,8 @@ int main(int argc, const char **argv) {
     cout << "# This is twsearch "
          << STRINGIZE(TWSEARCH_VERSION) << " (C) 2022 Tomas Rokicki." << endl;
     cout << "#";
-    for (int i = 0; i < orig_argc; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < orig_argc; i++)
       cout << " " << orig_argv[i];
     cout << endl << flush;
   }

@@ -25,7 +25,8 @@ void filtermovelist(puzdef &pd, const char *movelist) {
     moves = parsemoveorrotationlist(pd, movelist);
   vector<int> lowinc(pd.basemoves.size() + pd.baserotations.size(),
                      movelist == 0);
-  for (int i = 0; i < (int)moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)moves.size(); i++) {
     moove &mv = moves[i] >= nummoves ? pd.expandedrotations[moves[i] - nummoves]
                                      : pd.moves[moves[i]];
     int obase = moves[i] >= nummoves ? numbmoves + mv.base : mv.base;
@@ -36,7 +37,8 @@ void filtermovelist(puzdef &pd, const char *movelist) {
   vector<moove> newbase;
   map<int, int> moveremap;
   vector<int> newbasemoveorders;
-  for (int i = 0; i < (int)pd.basemoves.size() + (int)pd.baserotorders.size();
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.basemoves.size() + (int)pd.baserotorders.size();
        i++) {
     moove &bm =
         i >= numbmoves ? pd.baserotations[i - numbmoves] : pd.basemoves[i];
@@ -54,7 +56,8 @@ void filtermovelist(puzdef &pd, const char *movelist) {
     }
   }
   vector<moove> newmvs;
-  for (int i = 0; i < (int)pd.moves.size() + (int)pd.expandedrotations.size();
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size() + (int)pd.expandedrotations.size();
        i++) {
     moove &bm =
         i >= nummoves ? pd.expandedrotations[i - nummoves] : pd.moves[i];

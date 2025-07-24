@@ -26,16 +26,20 @@ void unrotate_setup(const puzdef &pd) {
   pd.assignpos(posns[0], pd.id);
   urinsert(pd, -1, -1);
   int movesn = pd.moves.size();
-  for (int i = 0; i < movesn; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < movesn; i++) {
     pd.assignpos(posns[0], pd.moves[i].pos);
     urinsert(pd, i, -1);
   }
-  for (int i = 0; i < (int)pd.baserotations.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.baserotations.size(); i++) {
     pd.assignpos(posns[0], pd.baserotations[i].pos);
     urinsert(pd, movesn + i, -1);
   }
-  for (int i = 0; i < movesn; i++)
-    for (int j = 0; j < (int)pd.baserotations.size(); j++) {
+  #pragma acc parallel loop
+for (int i = 0; i < movesn; i++)
+    #pragma acc parallel loop
+for (int j = 0; j < (int)pd.baserotations.size(); j++) {
       pd.mul(pd.moves[i].pos, pd.baserotations[j].pos, posns[0]);
       urinsert(pd, i, movesn + j);
     }
@@ -51,7 +55,8 @@ vector<int> unrotate(const puzdef &pd, const vector<int> &orig) {
     r = orig;
   } else {
     int a = orig[0];
-    for (int i = 1; i < (int)orig.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 1; i < (int)orig.size(); i++) {
       int b = orig[i];
       if (a < 0) {
         a = b;

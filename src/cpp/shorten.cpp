@@ -13,7 +13,8 @@ int solseen;
 int shortencb(setval &, const vector<int> &moves, int d, int) {
   get_global_lock();
   srcsol.resize(d);
-  for (int i = 0; i < d; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < d; i++)
     srcsol[i] = moves[i];
   solseen = 1;
   release_global_lock();
@@ -34,15 +35,19 @@ vector<int> shorten(const puzdef &pd, const vector<int> &orig) {
   int maxdepthoption = maxdepth;
   {
   again:
-    for (int md = 1; md < (int)seq.size(); md++) {
+    #pragma acc parallel loop
+for (int md = 1; md < (int)seq.size(); md++) {
       if (md > maxdepthoption)
         break;
-      for (int len = seq.size(); len > md; len--) {
+      #pragma acc parallel loop
+for (int len = seq.size(); len > md; len--) {
         cout << "Working with depth " << md << " length " << len << endl;
         maxdepth = md;
-        for (int i = 0; i + len <= (int)seq.size(); i++) {
+        #pragma acc parallel loop
+for (int i = 0; i + len <= (int)seq.size(); i++) {
           pd.assignpos(pos, pd.id);
-          for (int j = i; j < i + len; j++)
+          #pragma acc parallel loop
+for (int j = i; j < i + len; j++)
             domove(pd, pos, seq[j]);
           loosepack(pd, pos, shenc.data(), 1);
           auto it = fini.find(shenc);
@@ -53,7 +58,8 @@ vector<int> shorten(const puzdef &pd, const vector<int> &orig) {
               fini[shenc] = {10000, srcsol};
             } else {
               srcsol.resize(len);
-              for (int j = i; j < i + len; j++)
+              #pragma acc parallel loop
+for (int j = i; j < i + len; j++)
                 srcsol[j - i] = seq[j];
               fini[shenc] = {md, srcsol};
             }
@@ -63,13 +69,15 @@ vector<int> shorten(const puzdef &pd, const vector<int> &orig) {
           if ((int)sol.size() < len) {
             cout << "Improving sequence from " << len << " to " << sol.size()
                  << endl;
-            for (int j = 0; j < (int)sol.size(); j++) {
+            #pragma acc parallel loop
+for (int j = 0; j < (int)sol.size(); j++) {
               cout << "Setting index " << i + sol.size() - 1 - j << endl;
               seq[i + sol.size() - 1 - j] = pd.invmove(sol[j]);
             }
             seq.erase(seq.begin() + i + sol.size(), seq.begin() + i + len);
             cout << "Current length is " << seq.size() << endl;
-            for (int j = 0; j < (int)seq.size(); j++)
+            #pragma acc parallel loop
+for (int j = 0; j < (int)seq.size(); j++)
               cout << " " << pd.moves[seq[j]].name;
             cout << endl;
             goto again;

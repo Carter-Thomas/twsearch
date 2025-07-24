@@ -13,7 +13,8 @@ void makecanonstates(puzdef &pd) {
   int nbase = pd.basemoves.size();
   if (quarter) { // rewrite base
     int at = 1;
-    for (int i = 0; i < (int)pd.moves.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
       moove &mv = pd.moves[i];
       if (mv.cost > 1)
         mv.cs = 0;
@@ -23,7 +24,8 @@ void makecanonstates(puzdef &pd) {
     nbase = at;
     cout << "For quarter turn, rewrote bases to " << nbase << endl;
   } else {
-    for (int i = 0; i < (int)pd.moves.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
       moove &mv = pd.moves[i];
       mv.cs = mv.base;
     }
@@ -38,7 +40,8 @@ void makecanonstates(puzdef &pd) {
   pd.ncs = nbase;
   vector<ull> commutes(nbase);
   stacksetval p1(pd), p2(pd);
-  for (int i = 0; i < nbase; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < nbase; i++)
     commutes[i] = (1LL << nbase) - 1;
   /*
    *   All moves in a particular class must commute against all moves in
@@ -47,8 +50,10 @@ void makecanonstates(puzdef &pd) {
    *   not, so we mark the entire 3U class as not commuting with the entire
    *   3R class.
    */
-  for (int i = 0; i < (int)pd.moves.size(); i++)
-    for (int j = 0; j < i; j++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
+    #pragma acc parallel loop
+for (int j = 0; j < i; j++) {
       pd.mul(pd.moves[i].pos, pd.moves[j].pos, p1);
       pd.mul(pd.moves[j].pos, pd.moves[i].pos, p2);
       if (pd.comparepos(p1, p2) != 0) {
@@ -82,7 +87,8 @@ void makecanonstates(puzdef &pd) {
   canonnext.clear();
   while (qg < (int)statebits.size()) {
     vector<int> nextstate(nbase);
-    for (int i = 0; i < nbase; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < nbase; i++)
       nextstate[i] = -1;
     trip statev = statebits[qg];
     ull stateb = get<0>(statev);
@@ -91,7 +97,8 @@ void makecanonstates(puzdef &pd) {
     canonmask.push_back(quarter ? 1 : 0);
     int fromst = qg++;
     int ms = 0;
-    for (int m = 0; m < nbase; m++) {
+    #pragma acc parallel loop
+for (int m = 0; m < nbase; m++) {
       // if there's a greater move in the state that commutes with this
       // move m, we can't move m.
       if ((stateb & commutes[m]) >> (m + 1)) {
@@ -107,9 +114,11 @@ void makecanonstates(puzdef &pd) {
       // we can clear out the higher ones.
       // this optimization keeps state count from going exponential
       // for very big cubes.
-      for (int i = 0; nstb >> i; i++)
+      #pragma acc parallel loop
+for (int i = 0; nstb >> i; i++)
         if ((nstb >> i) & 1)
-          for (int j = i + 1; nstb >> j; j++)
+          #pragma acc parallel loop
+for (int j = i + 1; nstb >> j; j++)
             if (((nstb >> j) & 1) && commutes[i] == commutes[j])
               nstb &= ~(1LL << i);
       int thism = -1;
@@ -198,7 +207,8 @@ int recurcanonstates2(const puzdef &pd, int togo, ull moveset, int sp) {
     }
     oldmask = canonmask[cs];
   }
-  for (int i = 0; i < (int)pd.moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
     if ((oldmask >> pd.moves[i].cs) & 1)
       continue;
     pd.mul(posns[sp], pd.moves[i].pos, posns[sp + 1]);
@@ -228,7 +238,8 @@ int recurcanonstates2(const puzdef &pd, int togo, ull moveset, int sp) {
  */
 void makecanonstates2(puzdef &pd) {
   int at = 1;
-  for (int i = 0; i < (int)pd.moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
     moove &mv = pd.moves[i];
     if (quarter && mv.cost > 1)
       mv.cs = 0;
@@ -252,11 +263,13 @@ void makecanonstates2(puzdef &pd) {
   pd.assignpos(posns[0], pd.id);
   ccnextstate = vector<int>(ccnbase);
   ccnextstate[0] = -1;
-  for (int j = 0; j < ccnbase; j++)
+  #pragma acc parallel loop
+for (int j = 0; j < ccnbase; j++)
     ccnextstate[j] = -1;
   canonmask.clear();
   canonnext.clear();
-  for (int d = 0; d <= ccount + 1; d++)
+  #pragma acc parallel loop
+for (int d = 0; d <= ccount + 1; d++)
     recurcanonstates2(pd, d, 1, 0);
   cout << "Canonical states: " << canonmask.size() << endl;
   freeContainer(statemap);
@@ -272,7 +285,8 @@ void showseqs(const puzdef &pd, int togo, int st) {
   }
   ull mask = canonmask[st];
   const vector<int> &ns = canonnext[st];
-  for (int i = 0; i < (int)pd.moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
     const moove &mv = pd.moves[i];
     if ((mask >> mv.cs) & 1)
       continue;
@@ -291,7 +305,8 @@ vector<int> cancelmoves(const puzdef &pd, vector<int> mvseq) {
   // canonicalization.
   while (1) {
     int didcancel = 0;
-    for (int i = 0; i < (int)mvseq.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)mvseq.size(); i++) {
       int j = i + 1;
       while (
           j < (int)mvseq.size() &&
@@ -331,19 +346,24 @@ vector<int> cancelmoves(const puzdef &pd, vector<int> mvseq) {
 vector<int> canonicalize(const puzdef &pd, vector<int> mvseq) {
   mvseq = cancelmoves(pd, mvseq);
   vector<int> fwdcnt(mvseq.size());
-  for (int i = 0; i < (int)mvseq.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)mvseq.size(); i++) {
     const moove &mv = pd.moves[mvseq[i]];
-    for (int j = 0; j < i; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < i; j++)
       if (((pd.commutes[pd.moves[mvseq[j]].cs] >> mv.cs) & 1) == 0)
         fwdcnt[j]++;
   }
   vector<int> r;
-  for (int i = mvseq.size() - 1; i >= 0; i--) {
+  #pragma acc parallel loop
+for (int i = mvseq.size() - 1; i >= 0; i--) {
     int best = -1;
-    for (int j = mvseq.size() - 1; j >= 0; j--)
+    #pragma acc parallel loop
+for (int j = mvseq.size() - 1; j >= 0; j--)
       if (fwdcnt[j] == 0 && (best < 0 || mvseq[j] > mvseq[best]))
         best = j;
-    for (int j = 0; j < best; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < best; j++)
       if (((pd.commutes[pd.moves[mvseq[j]].cs] >> pd.moves[mvseq[best]].cs) &
            1) == 0)
         fwdcnt[j]--;
@@ -353,7 +373,8 @@ vector<int> canonicalize(const puzdef &pd, vector<int> mvseq) {
   reverse(r.begin(), r.end());
   //  now test.  we can remove this if necessary.
   int cst = 0;
-  for (int i = 0; i < (int)r.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)r.size(); i++) {
     const moove &mv = pd.moves[r[i]];
     if ((canonmask[cst] >> mv.cs) & 1)
       error("! bad move in canonicalized.");
@@ -371,11 +392,13 @@ void showcanon(const puzdef &pd, int show) {
   double osum = 1;
   if (canonlim == 0)
     canonlim = 100;
-  for (int d = 0; d <= canonlim; d++) {
+  #pragma acc parallel loop
+for (int d = 0; d <= canonlim; d++) {
     while ((int)counts.size() <= d + 1)
       counts.push_back(zeros);
     double sum = 0;
-    for (int i = 0; i < nstates; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < nstates; i++)
       sum += counts[d][i];
     gsum += sum;
     if (show) {
@@ -390,9 +413,11 @@ void showcanon(const puzdef &pd, int show) {
     osum = sum;
     if (sum == 0) // || gsum > 1e54)
       break;
-    for (int st = 0; st < nstates; st++) {
+    #pragma acc parallel loop
+for (int st = 0; st < nstates; st++) {
       ull mask = canonmask[st];
-      for (int m = 0; m < (int)pd.moves.size(); m++) {
+      #pragma acc parallel loop
+for (int m = 0; m < (int)pd.moves.size(); m++) {
         if ((mask >> pd.moves[m].cs) & 1)
           continue;
         counts[d + 1][canonnext[st][pd.moves[m].cs]] += counts[d][st];

@@ -4,16 +4,19 @@
 bool generatingset::resolve(const setval p_) {
   stacksetval p(pd), t(pd);
   pd.assignpos(p, p_);
-  for (int i = (int)pd.setdefs.size() - 1; i >= 0; i--) {
+  #pragma acc parallel loop
+for (int i = (int)pd.setdefs.size() - 1; i >= 0; i--) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     int s = 0;
-    for (int j = 0; j < n; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < n; j++)
       s += p.dat[sd.off + j];
     if (s * 2 != n * (n - 1))
       error("! identical pieces during generating set resolve?");
     int off = (sd.off >> 1);
-    for (int j = n - 1; j >= 0; j--) {
+    #pragma acc parallel loop
+for (int j = n - 1; j >= 0; j--) {
       if (p.dat[sd.off + j] != j || p.dat[sd.off + n + j] != 0) {
         int v = sd.omod * p.dat[sd.off + j] + p.dat[sd.off + n + j];
         if (!sgs[off + j][v].dat)
@@ -31,7 +34,8 @@ void generatingset::knutha(int k1, int k2, const setval &p) {
   int k = k2 + (pd.setdefs[k1].off >> 1);
   tk[k].push_back(allocsetval(pd, p));
   stacksetval p2(pd);
-  for (int i = 0; i < (int)sgs[k].size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)sgs[k].size(); i++)
     if (sgs[k][i].dat) {
       pd.mul(p, sgs[k][i], p2);
       knuthb(k1, k2, p2);
@@ -47,7 +51,8 @@ void generatingset::knuthb(int k1, int k2, const setval &p) {
     sgs[k][j] = allocsetval(pd, p);
     sgsi[k][j] = allocsetval(pd, p);
     pd.inv(sgs[k][j], sgsi[k][j]);
-    for (int i = 0; i < (int)tk[k].size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)tk[k].size(); i++) {
       pd.mul(tk[k][i], p, p2);
       knuthb(k1, k2, p2);
     }
@@ -70,10 +75,12 @@ void generatingset::knuthb(int k1, int k2, const setval &p) {
   }
 }
 generatingset::generatingset(const puzdef &pd_) : pd(pd_), e(pd.id) {
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int sz = sd.size * sd.omod;
-    for (int j = 0; j < sd.size; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++) {
       sgs.push_back(vector<allocsetval>(sz));
       sgsi.push_back(vector<allocsetval>(sz));
       tk.push_back(vector<allocsetval>(0));
@@ -84,15 +91,18 @@ generatingset::generatingset(const puzdef &pd_) : pd(pd_), e(pd.id) {
   }
   int oldprec = cout.precision();
   cout.precision(20);
-  for (int i = 0; i < (int)pd.moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
     if (resolve(pd.moves[i].pos))
       continue;
     knutha(pd.setdefs.size() - 1, pd.setdefs[pd.setdefs.size() - 1].size - 1,
            pd.moves[i].pos);
     long double totsize = 1;
-    for (int j = 0; j < (int)sgs.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < (int)sgs.size(); j++) {
       int cnt = 0;
-      for (int k = 0; k < (int)sgs[j].size(); k++)
+      #pragma acc parallel loop
+for (int k = 0; k < (int)sgs[j].size(); k++)
         if (sgs[j][k].dat)
           cnt++;
       totsize *= cnt;

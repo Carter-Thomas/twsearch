@@ -74,7 +74,8 @@ int isprime(int p) {
     return 1;
   if ((p & 1) == 0)
     return 0;
-  for (int j = 3;; j += 2) {
+  #pragma acc parallel loop
+for (int j = 3;; j += 2) {
     if (p % j == 0)
       return 0;
     if (j * j > p)

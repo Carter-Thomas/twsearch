@@ -15,24 +15,29 @@ void calcrotinvs(puzdef &pd) {
   pd.rotinv.clear();
   map<vector<loosetype>, int> rotlook;
   vector<loosetype> enc(looseiper);
-  for (int m = 0; m < (int)pd.rotgroup.size(); m++) {
+  #pragma acc parallel loop
+for (int m = 0; m < (int)pd.rotgroup.size(); m++) {
     loosepack(pd, pd.rotgroup[m].pos, enc.data(), 1);
     rotlook[enc] = m;
   }
-  for (int m = 0; m < (int)pd.rotgroup.size(); m++) {
+  #pragma acc parallel loop
+for (int m = 0; m < (int)pd.rotgroup.size(); m++) {
     pd.inv(pd.rotgroup[m].pos, pw);
     loosepack(pd, pw, enc.data(), 1);
     pd.rotinv.push_back(rotlook[enc]);
   }
 }
 int rotation_ok_solved(puzdef &pd, const setval rot, setval &rotw) {
-  for (int j = 0; j < (int)pd.totsize; j++)
+  #pragma acc parallel loop
+for (int j = 0; j < (int)pd.totsize; j++)
     rotw.dat[j] = 255;
-  for (int j = 0; j < (int)pd.setdefs.size(); j++) {
+  #pragma acc parallel loop
+for (int j = 0; j < (int)pd.setdefs.size(); j++) {
     setdef &sd = pd.setdefs[j];
     int n = sd.size;
     int off = sd.off;
-    for (int k = 0; k < n; k++) {
+    #pragma acc parallel loop
+for (int k = 0; k < n; k++) {
       int pi = off + pd.solved.dat[off + k];
       int pv = pd.solved.dat[off + rot.dat[off + k]];
       if (rotw.dat[pi] == 255 || rotw.dat[pi] == pv)
@@ -65,7 +70,8 @@ void calcrotinvmap(puzdef &pd) {
   //  Note however that pd.rotinvmap entries should *only* be
   //  applied to *positions* and never moves.
   pd.rotinvmap.clear();
-  for (int i = 0; i < (int)pd.rotgroup.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.rotgroup.size(); i++) {
     const setval &roti = pd.rotgroup[pd.rotinv[i]].pos;
     pd.rotinvmap.push_back(allocsetval(pd, roti));
     auto &rotw = pd.rotinvmap[i];
@@ -85,8 +91,10 @@ void calcrotations(puzdef &pd) {
   m.cost = 0;
   m.twist = 0;
   q.push_back(m);
-  for (int qg = 0; qg < (int)q.size(); qg++) {
-    for (int i = 0; i < (int)pd.baserotations.size(); i++) {
+  #pragma acc parallel loop
+for (int qg = 0; qg < (int)q.size(); qg++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd.baserotations.size(); i++) {
       vector<uchar> t(pd.totsize);
       setval w(t.data());
       pd.mul(q[qg].pos, pd.baserotations[i].pos, w);
@@ -106,16 +114,20 @@ void calcrotations(puzdef &pd) {
    */
   vector<moove> filtered;
   int remap[256];
-  for (int i = 0; i < (int)q.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)q.size(); i++) {
     pd.mul(pd.solved, q[i].pos, pw);
     int good = 1;
-    for (int j = 0; good && j < (int)pd.setdefs.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; good && j < (int)pd.setdefs.size(); j++) {
       setdef &sd = pd.setdefs[j];
       int n = sd.size;
       int off = sd.off;
-      for (int k = 0; k < n; k++)
+      #pragma acc parallel loop
+for (int k = 0; k < n; k++)
         remap[k] = -1;
-      for (int k = 0; k < n; k++) {
+      #pragma acc parallel loop
+for (int k = 0; k < n; k++) {
         int oldv = pd.solved.dat[off + k];
         int newv = pw.dat[off + k];
         if (remap[oldv] < 0) {
@@ -125,10 +137,12 @@ void calcrotations(puzdef &pd) {
         }
       }
     }
-    for (int j = 0; good && j < (int)pd.moves.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; good && j < (int)pd.moves.size(); j++) {
       pd.mul3(q[pd.rotinv[i]].pos, pd.moves[j].pos, q[i].pos, pw);
       int found = -1;
-      for (int k = 0; k < (int)pd.moves.size(); k++) {
+      #pragma acc parallel loop
+for (int k = 0; k < (int)pd.moves.size(); k++) {
         if (pd.comparepos(pw, pd.moves[k].pos) == 0) {
           found = k;
           break;
@@ -169,7 +183,8 @@ void calcrotations(puzdef &pd) {
   */
 }
 void showpos(const puzdef &pd, const setval s) {
-  for (int i = 0; i < pd.totsize; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < pd.totsize; i++)
     cout << " " << (int)s.dat[i];
   cout << endl;
 }
@@ -187,7 +202,8 @@ int slowmodm0(const puzdef &pd, const setval p1, setval p2) {
   stacksetval s1(pd), s2(pd);
   int v0 = 1000, v1 = 1000;
   // cout << "Doing " ; showpos(pd, p1) ;
-  for (int m1 = 0; m1 < (int)pd.rotgroup.size(); m1++) {
+  #pragma acc parallel loop
+for (int m1 = 0; m1 < (int)pd.rotgroup.size(); m1++) {
     pd.mul(pd.rotgroup[m1].pos, p1, s1);
     int m2 = pd.rotinv[m1];
     {
@@ -224,7 +240,8 @@ int slowmodm0(const puzdef &pd, const setval p1, setval p2) {
 int slowmodm(const puzdef &pd, const setval p1, setval p2) {
   int cnt = -1;
   int v0 = 1000, v1 = 1000;
-  for (int m1 = 0; m1 < (int)pd.rotgroup.size(); m1++) {
+  #pragma acc parallel loop
+for (int m1 = 0; m1 < (int)pd.rotgroup.size(); m1++) {
     int m2 = pd.rotinv[m1];
     int t = pd.rotgroup[m1].pos.dat[p1.dat[pd.rotgroup[m2].pos.dat[0]]] - v0;
     if (t > 0)
@@ -263,7 +280,8 @@ int slowmodmip(const puzdef &pd, const setval p1, setval p2,
   int cnt = -1;
   int v0 = 1000, v1 = 1000;
   stacksetval pw(pd);
-  for (int m1 = 0; m1 < (int)rotgroup.size(); m1++) {
+  #pragma acc parallel loop
+for (int m1 = 0; m1 < (int)rotgroup.size(); m1++) {
     int m2 = rotinv[m1];
     int t =
         pd.solved.dat[rotgroup[m1].pos.dat[p1.dat[rotgroup[m2].pos.dat[0]]]] -
@@ -323,7 +341,8 @@ int slowmodm2(const puzdef &pd, const setval p1, setval p2) {
   } else {
     int g = pd.lowsymmguess(p1);
     pd.mul3(pd.rotinvmap[g], p1, pd.rotgroup[g].pos, p2);
-    for (int m = g + 1; m < (int)pd.rotgroup.size(); m++) {
+    #pragma acc parallel loop
+for (int m = g + 1; m < (int)pd.rotgroup.size(); m++) {
       if (p2.dat[0] != pd.rotinvmap[m].dat[p1.dat[pd.rotgroup[m].pos.dat[0]]])
         continue;
       int t = pd.mulcmp3(pd.rotinvmap[m], p1, pd.rotgroup[m].pos, p2);
@@ -386,7 +405,8 @@ int slowmodm2inv(const puzdef &pd, const setval p1, setval p2, setval pt) {
     }
   } else {
     int g = 0;
-    for (int m = g + 1; m < (int)pd.rotgroup.size(); m++) {
+    #pragma acc parallel loop
+for (int m = g + 1; m < (int)pd.rotgroup.size(); m++) {
       if (p2.dat[0] < pd.rotinvmap[m].dat[p1.dat[pd.rotgroup[m].pos.dat[0]]])
         continue;
       int t = pd.mulcmp3(pd.rotinvmap[m], pt, pd.rotgroup[m].pos, p2);

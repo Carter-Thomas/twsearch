@@ -14,7 +14,8 @@ void totalvar(const puzdef &pd) {
   double expected = 1.0 / n;
   double permov = 1.0 / pd.moves.size();
   stacksetval src(pd), dst(pd);
-  for (int nmoves = 0; nmoves < 100; nmoves++) {
+  #pragma acc parallel loop
+for (int nmoves = 0; nmoves < 100; nmoves++) {
     double tv = 0;
     for (auto v : dist)
       tv += abs(expected - v);

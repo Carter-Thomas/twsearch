@@ -77,7 +77,8 @@ int microthread::possibsolution(const puzdef &pd) {
     lastsolution.clear();
     if (d == 0) // allow null solution to trigger
       cout << " ";
-    for (int i = 0; i < d; i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < d; i++) {
       cout << " " << pd.moves[movehist[i]].name;
       if (i > 0)
         lastsolution += " ";
@@ -110,7 +111,8 @@ int microthread::getwork(const puzdef &pd, prunetable &pt) {
 }
 int solveworker::solveiter(const puzdef &pd, prunetable &pt, const setval p) {
   int active = 0;
-  for (int uid = 0; uid < workinguthreading; uid++) {
+  #pragma acc parallel loop
+for (int uid = 0; uid < workinguthreading; uid++) {
     uthr[uid].init(pd, d, tid, p);
     uthr[uid].finished = 0;
     if (uthr[uid].getwork(pd, pt)) {
@@ -277,7 +279,8 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
   randomized.clear();
   ull lastlookups = 0;
   ull lastextra = 0;
-  for (int d = initd; d <= maxdepth; d++) {
+  #pragma acc parallel loop
+for (int d = initd; d <= maxdepth; d++) {
     lastlookups = totlookups;
     lastextra = totextra;
     if (alloptimal && solutionsfound > 0)
@@ -286,9 +289,11 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
       while ((int)randomized.size() <= d) {
         randomized.push_back({});
         vector<int> &r = randomized[randomized.size() - 1];
-        for (int i = 0; i < (int)pd.moves.size(); i++)
+        #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
           r.push_back(i);
-        for (int i = 0; i < (int)r.size(); i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < (int)r.size(); i++) {
           int j = i + myrand(r.size() - i);
           swap(r[i], r[j]);
         }
@@ -308,18 +313,22 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
     workinguthreading =
         min(requesteduthreading,
             (int)(workchunks.size() + numthreads - 1) / numthreads);
-    for (int t = 0; t < wthreads; t++)
+    #pragma acc parallel loop
+for (int t = 0; t < wthreads; t++)
       solveworkers[t].init(d, t, p);
 #ifdef USE_PTHREADS
-    for (int i = 1; i < wthreads; i++)
+    #pragma acc parallel loop
+for (int i = 1; i < wthreads; i++)
       spawn_thread(i, threadworker, &(workerparams[i]));
     threadworker((void *)&workerparams[0]);
-    for (int i = 1; i < wthreads; i++)
+    #pragma acc parallel loop
+for (int i = 1; i < wthreads; i++)
       join_thread(i);
 #else
     threadworker((void *)&workerparams[0]);
 #endif
-    for (int i = 0; i < wthreads; i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < wthreads; i++) {
       totlookups += solveworkers[i].lookups;
       totextra += solveworkers[i].extraprobes;
       pt.addlookups(solveworkers[i].lookups);

@@ -9,7 +9,8 @@ void runorderedgs(const puzdef &pd) {
     order.push_back(v);
   orderedgs *ogs = new orderedgs(pd, order);
   vector<int> r = ogs->getsizes();
-  for (int i = 0; i < (int)r.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)r.size(); i++)
     cout << " " << r[i];
   cout << endl;
   delete ogs;
@@ -17,7 +18,8 @@ void runorderedgs(const puzdef &pd) {
 bool orderedgs::resolve(const setval p_) {
   stacksetval p(pd), t(pd);
   pd.assignpos(p, p_);
-  for (int i = (int)oset.size() - 1; i >= 0; i--) {
+  #pragma acc parallel loop
+for (int i = (int)oset.size() - 1; i >= 0; i--) {
     int sdi = oset[i];
     const setdef &sd = pd.setdefs[sdi];
     int n = sd.size;
@@ -37,7 +39,8 @@ bool orderedgs::resolve(const setval p_) {
 void orderedgs::knutha(int k, const setval &p) {
   tk[k].push_back(allocsetval(pd, p));
   stacksetval p2(pd);
-  for (int i = 0; i < (int)sgs[k].size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)sgs[k].size(); i++)
     if (sgs[k][i].dat) {
       pd.mul(p, sgs[k][i], p2);
       knuthb(k, p2);
@@ -54,7 +57,8 @@ void orderedgs::knuthb(int k, const setval &p) {
     sgs[k][j] = allocsetval(pd, p);
     sgsi[k][j] = allocsetval(pd, p);
     pd.inv(sgs[k][j], sgsi[k][j]);
-    for (int i = 0; i < (int)tk[k].size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)tk[k].size(); i++) {
       pd.mul(tk[k][i], p, p2);
       knuthb(k, p2);
     }
@@ -69,9 +73,11 @@ void orderedgs::knuthb(int k, const setval &p) {
 }
 vector<int> orderedgs::getsizes() {
   vector<int> r;
-  for (int j = sgs.size() - 1; j >= 0; j--) {
+  #pragma acc parallel loop
+for (int j = sgs.size() - 1; j >= 0; j--) {
     int cnt = 0;
-    for (int k = 0; k < (int)sgs[j].size(); k++)
+    #pragma acc parallel loop
+for (int k = 0; k < (int)sgs[j].size(); k++)
       if (sgs[j][k].dat)
         cnt++;
     r.push_back(cnt);
@@ -88,17 +94,21 @@ orderedgs::orderedgs(const puzdef &pd_, const vector<int> &norder)
       sorted.push_back(v);
     sorted.push_back(pd.totsize >> 1);
     sort(sorted.begin(), sorted.end());
-    for (int i = 0; i + 1 < (int)sorted.size(); i++)
-      for (int j = sorted[i] + 1; j < sorted[i + 1]; j++)
+    #pragma acc parallel loop
+for (int i = 0; i + 1 < (int)sorted.size(); i++)
+      #pragma acc parallel loop
+for (int j = sorted[i] + 1; j < sorted[i + 1]; j++)
         order.push_back(j);
   }
   reverse(order.begin(), order.end());
   oset.resize(order.size());
   ooff.resize(order.size());
-  for (int i = 0; i < (int)order.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)order.size(); i++) {
     int roff = order[i];
     int sdi = -1;
-    for (int j = 0; j < (int)pd.setdefs.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < (int)pd.setdefs.size(); j++) {
       const setdef &sd = pd.setdefs[j];
       if (roff < sd.size) {
         sdi = j;
@@ -121,14 +131,17 @@ orderedgs::orderedgs(const puzdef &pd_, const vector<int> &norder)
   }
   int oldprec = cout.precision();
   cout.precision(20);
-  for (int i = 0; i < (int)pd.moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
     if (resolve(pd.moves[i].pos))
       continue;
     knutha(order.size() - 1, pd.moves[i].pos);
     long double totsize = 1;
-    for (int j = 0; j < (int)sgs.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < (int)sgs.size(); j++) {
       int cnt = 0;
-      for (int k = 0; k < (int)sgs[j].size(); k++)
+      #pragma acc parallel loop
+for (int k = 0; k < (int)sgs[j].size(); k++)
         if (sgs[j][k].dat)
           cnt++;
       totsize *= cnt;

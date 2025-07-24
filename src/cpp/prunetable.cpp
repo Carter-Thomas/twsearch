@@ -58,7 +58,8 @@ void fillworker::init(const puzdef &pd, int d_) {
     posns.push_back(allocsetval(pd, pd.solved));
   pd.assignpos(posns[0], pd.solved);
   d = d_;
-  for (int i = 0; i < MEMSHARDS; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < MEMSHARDS; i++)
     fillbufs[i].nchunks = 0;
   wfillcnt = 0;
 }
@@ -79,7 +80,8 @@ ull fillworker::fillstart(const puzdef &pd, prunetable &pt, int w) {
     initmoves /= nmoves;
   }
   ull r = filltable(pd, pt, togo, sp, st);
-  for (int i = 0; i < MEMSHARDS; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < MEMSHARDS; i++)
     r += fillflush(pt, i);
   return r;
 }
@@ -91,7 +93,8 @@ ull fillworker::fillflush(prunetable &pt, int shard) {
     pthread_mutex_lock(&(memshards[shard].mutex));
 #endif
     wfillcnt += fb.nchunks;
-    for (int i = 0; i < fb.nchunks; i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < fb.nchunks; i++) {
       ull h = fb.chunks[i];
       if (((pt.mem[h >> 5] >> (2 * (h & 31))) & 3) == 0) {
         pt.mem[h >> 5] += (3LL - pt.wval) << (2 * (h & 31));
@@ -142,7 +145,8 @@ ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
   }
   ull mask = canonmask[st];
   const vector<int> &ns = canonnext[st];
-  for (int m = 0; m < (int)pd.moves.size(); m++) {
+  #pragma acc parallel loop
+for (int m = 0; m < (int)pd.moves.size(); m++) {
     const moove &mv = pd.moves[m];
     if ((mask >> mv.cs) & 1)
       continue;
@@ -157,7 +161,8 @@ void ioqueue::initin(struct prunetable *pt_, istream *f_) {
   pt = pt_;
   inf = f_;
   outf = 0;
-  for (int i = 0; i < numthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
     ioworkitems[i].state = 0;
   nextthread = 0;
 }
@@ -165,7 +170,8 @@ void ioqueue::initout(struct prunetable *pt_, ostream *f_) {
   pt = pt_;
   inf = 0;
   outf = f_;
-  for (int i = 0; i < numthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
     ioworkitems[i].state = 0;
   nextthread = 0;
 }
@@ -233,7 +239,8 @@ void ioqueue::queueunpackwork(ull *mem, ull longcnt, uchar *buf,
     nextthread = 0;
 }
 void ioqueue::finishall() {
-  for (int i = 0; i < numthreads; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++) {
     if (ioworkitems[nextthread].state != 0)
       waitthread(nextthread);
     nextthread = (nextthread + 1) % numthreads;
@@ -257,7 +264,8 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   // now add up to 7 additional bits, so long as we don't go over
   // maxmem or the other limits.
   ull subbytesize = bytesize;
-  for (int i = 0; i < 7; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < 7; i++) {
     subbytesize >>= 1;
     if (bytesize + subbytesize <= maxmem &&
         (pd.logstates > 55 || 8 * (subbytesize + bytesize) < pd.llstates))
@@ -297,7 +305,8 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   lookupcnt = 0;
   fillcnt = 0;
   justread = 0;
-  for (int i = 0; i < 7; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 7; i++)
     dtabs[i] = 0;
   if (!readpt(pd)) {
     if (quiet == 0)
@@ -307,7 +316,8 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
     filltable(pd, 1);
     filltable(pd, 2);
     if (startprunedepth) {
-      for (int i = 3; i <= startprunedepth; i++)
+      #pragma acc parallel loop
+for (int i = 3; i <= startprunedepth; i++)
         checkextend(pd, 1);
     } else {
       checkextend(pd, 1);
@@ -323,17 +333,21 @@ void prunetable::filltable(const puzdef &pd, int d) {
   workchunks = makeworkchunks(pd, d, pd.solved);
   workat = 0;
   int wthreads = setupthreads(pd, *this, workchunks, workerparams);
-  for (int t = 0; t < wthreads; t++)
+  #pragma acc parallel loop
+for (int t = 0; t < wthreads; t++)
     fillworkers[t].init(pd, d);
 #ifdef USE_PTHREADS
-  for (int i = 0; i < wthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < wthreads; i++)
     spawn_thread(i, fillthreadworker, &(workerparams[i]));
-  for (int i = 0; i < wthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < wthreads; i++)
     join_thread(i);
 #else
   fillthreadworker((void *)&workerparams[0]);
 #endif
-  for (int i = 0; i < wthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < wthreads; i++)
     fillcnt += fillworkers[i].wfillcnt;
   if (quiet == 0) {
     double dur = duration();
@@ -450,7 +464,8 @@ ull prunetable::calcblocksize(ull *mem, ull longcnt) {
     if (v < 16) {
       bits += codewidths[v + 256];
     } else {
-      for (int j = 0; j < 8; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < 8; j++) {
         bits += codewidths[v & 255];
         v >>= 8;
       }
@@ -478,7 +493,8 @@ void prunetable::packblock(ull *mem, ull longcnt, uchar *buf, ull bytecnt) {
       accum = (accum << cpw) + codevals[cp];
       havebits += cpw;
     } else {
-      for (int j = 0; j < 8; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < 8; j++) {
         int cp = v & 255;
         int cpw = codewidths[cp];
         if (cpw == 0)
@@ -540,7 +556,8 @@ void prunetable::unpackblock(ull *mem, ull longcnt, uchar *block, int) {
           memb += dc->bytewidth;
         } else {
           auto t = dc->d;
-          for (int ii = 0; ii < dc->bytewidth; ii++) {
+          #pragma acc parallel loop
+for (int ii = 0; ii < dc->bytewidth; ii++) {
             *memb++ = t;
             t >>= 8;
           }
@@ -588,7 +605,8 @@ void *cntthreadworker(void *o) {
   ll s = wp->s;
   ll e = wp->e;
   ll lbc[272];
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     lbc[i] = 0;
   for (ll i = s; i < e; i++) {
     ull v = wp->mem[i];
@@ -606,7 +624,8 @@ void *cntthreadworker(void *o) {
     }
   }
   get_global_lock();
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     bytecnts[i] += lbc[i];
   release_global_lock();
   return 0;
@@ -629,16 +648,19 @@ void prunetable::writept(const puzdef &pd) {
   // still shift things out in byte-sized chunks.
   if (quiet == 0)
     cout << "Scanning memory for compression information" << flush;
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     bytecnts[i] = 0;
 #ifdef USE_PTHREADS
-  for (int i = 0; i < numthreads; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++) {
     ll s = longcnt * i / numthreads;
     ll e = longcnt * (i + 1) / numthreads;
     cntparams[i] = {s, e, mem};
     spawn_thread(i, cntthreadworker, cntparams + i);
   }
-  for (int i = 0; i < numthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
     join_thread(i);
 #else
   cntparams[0] = {0, longcnt, mem};
@@ -649,7 +671,8 @@ void prunetable::writept(const puzdef &pd) {
   set<pair<ll, int>> codes;
   vector<pair<int, int>> tree; // binary tree
   vector<int> depths;          // max depths
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     if (bytecnts[i])
       codes.insert(make_pair(bytecnts[i], i));
   int nextcode = 272;
@@ -680,25 +703,30 @@ void prunetable::writept(const puzdef &pd) {
          << duration() << endl;
   codewidths[nextcode - 1] = 0;
   codevals[nextcode - 1] = 0;
-  for (int i = 0; i < 272; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++) {
     codewidths[i] = 0;
     codevals[i] = 0;
   }
   int widthcounts[64];
-  for (int i = 0; i < 64; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 64; i++)
     widthcounts[i] = 0;
   codewidths[nextcode - 1] = 0;
-  for (int i = nextcode - 1; i >= 272; i--) {
+  #pragma acc parallel loop
+for (int i = nextcode - 1; i >= 272; i--) {
     int a = tree[i - 272].first;
     int b = tree[i - 272].second;
     codewidths[a] = codewidths[i] + 1;
     codewidths[b] = codewidths[i] + 1;
   }
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     widthcounts[codewidths[i]]++;
   ull widthbases[64];
   ull at = 0;
-  for (int i = 63; i > 0; i--) {
+  #pragma acc parallel loop
+for (int i = 63; i > 0; i--) {
     if (widthcounts[i]) {
       widthbases[i] = at >> (maxwidth - i);
       at += ((ull)widthcounts[i]) << (maxwidth - i);
@@ -706,7 +734,8 @@ void prunetable::writept(const puzdef &pd) {
   }
   if (at != (1ULL << maxwidth))
     error("! Bad calculation in codes");
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     if (codewidths[i]) {
       codevals[i] = widthbases[codewidths[i]];
       widthbases[codewidths[i]]++;
@@ -753,7 +782,8 @@ void prunetable::writept(const puzdef &pd) {
 }
 int prunetable::readpt(const puzdef &pd) {
 #ifdef USECOMPRESSION
-  for (int i = 0; i < 272; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++) {
     codewidths[i] = 0;
     codevals[i] = 0;
   }
@@ -812,10 +842,12 @@ int prunetable::readpt(const puzdef &pd) {
     return 0;
   }
   int widthcounts[64];
-  for (int i = 0; i < 64; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 64; i++)
     widthcounts[i] = 0;
   int maxwidth = 1;
-  for (int i = 0; i < 272; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++) {
     if (codewidths[i] >= 56)
       error("! bad code widths in pruning table file");
     maxwidth = max(maxwidth, (int)codewidths[i]);
@@ -823,7 +855,8 @@ int prunetable::readpt(const puzdef &pd) {
   }
   ull widthbases[64];
   ull at = 0;
-  for (int i = 63; i > 0; i--) {
+  #pragma acc parallel loop
+for (int i = 63; i > 0; i--) {
     if (widthcounts[i]) {
       widthbases[i] = at >> (maxwidth - i);
       at += ((ull)widthcounts[i]) << (maxwidth - i);
@@ -831,16 +864,19 @@ int prunetable::readpt(const puzdef &pd) {
   }
   if (at != (1ULL << maxwidth))
     error("! Bad codewidth sum in codes");
-  for (int i = 0; i < 272; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 272; i++)
     if (codewidths[i]) {
       codevals[i] = widthbases[codewidths[i]];
       widthbases[codewidths[i]]++;
     }
   at = 0; // restore the widthbases
   int theight[8];
-  for (int i = 0; i < 8; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 8; i++)
     theight[i] = 0;
-  for (int i = 63; i > 0; i--) {
+  #pragma acc parallel loop
+for (int i = 63; i > 0; i--) {
     if (widthcounts[i]) {
       widthbases[i] = at >> (maxwidth - i);
       at += ((ull)widthcounts[i]) << (maxwidth - i);
@@ -854,15 +890,18 @@ int prunetable::readpt(const puzdef &pd) {
       }
     }
   }
-  for (int i = 0; i < 8; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 8; i++)
     if (theight[i])
       dtabs[i] =
           (struct decompinfo *)calloc(theight[i], sizeof(struct decompinfo));
   at = 0;
   int twidth = (maxwidth + UNPACKBITS - 1) / UNPACKBITS * UNPACKBITS;
-  for (int i = 63; i > 0; i--) {
+  #pragma acc parallel loop
+for (int i = 63; i > 0; i--) {
     if (widthcounts[i]) {
-      for (int cp = 0; cp < 272; cp++)
+      #pragma acc parallel loop
+for (int cp = 0; cp < 272; cp++)
         if (codewidths[cp] == i) {
           int k = (i - 1) / UNPACKBITS;
           int incsh = twidth - UNPACKBITS * (k + 1);
@@ -888,12 +927,14 @@ int prunetable::readpt(const puzdef &pd) {
   decompinfo *expander =
       (decompinfo *)malloc(theight[0] * sizeof(struct decompinfo));
   memcpy(expander, dtabs[0], theight[0] * sizeof(struct decompinfo));
-  for (int k = 0; k < 8; k++) {
+  #pragma acc parallel loop
+for (int k = 0; k < 8; k++) {
     // don't consider expanding anything that would push us past 56 needed bits
     if (UNPACKBITS * (k + 1) > 56)
       break;
     if (theight[k])
-      for (int i = 0; i < theight[k]; i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < theight[k]; i++) {
         auto dc = &(dtabs[k][i]);
         if (dc->bitwidth && dc->bytewidth < 4) {
           int xtra = (k + 1) * UNPACKBITS - dc->bitwidth;

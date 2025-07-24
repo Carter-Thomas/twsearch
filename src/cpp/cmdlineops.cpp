@@ -32,7 +32,8 @@ void solvecmdline(puzdef &pd, const char *scr, generatingset *gs) {
   string noname;
   prunetable pt(pd, maxmem);
   vector<allocsetval> movelist = parsemovelist_generously(pd, scr);
-  for (int i = 0; i < (int)movelist.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)movelist.size(); i++)
     domove(pd, p1, movelist[i]);
   solveit(pd, pt, noname, p1, gs);
 }
@@ -130,7 +131,8 @@ void invertit(const puzdef &pd, vector<int> &movelist, const char *) {
   if (movelist.size() == 0) {
     cout << " ";
   } else {
-    for (int i = 0; i < (int)movelist.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)movelist.size(); i++) {
       cout << " ";
       int ind = movelist[movelist.size() - 1 - i];
       const moove *mv = 0;
@@ -237,14 +239,16 @@ void conjugit(const puzdef &pd, setval p, const char *s) {
   stacksetval p2(pd), p3(pd);
   pd.assignpos(p2, pd.id);
   pd.mul(p2, p, p3);
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     vector<pair<int, int>> cc = pd.cyccnts2(p3, 1LL << i);
     sort(cc.begin(), cc.end());
     if (i != 0)
       cout << ",";
     cout << "[";
     const char *sep = "";
-    for (int j = 0; j < (int)cc.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < (int)cc.size(); j++) {
       if (cc[j].first == 1 && cc[j].second == 0)
         continue;
       cout << sep;
@@ -286,15 +290,18 @@ void emitmp(const puzdef &pd, setval p, const char *, int fixmoves) {
     else
       cout << "Scramble noname" << endl;
   }
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     if (compact) {
       int nn = sd.size * sd.omod;
-      for (int i = 0; i < n; i++)
+      #pragma acc parallel loop
+for (int i = 0; i < n; i++)
         if (a[i + n] >= sd.omod)
           error("! compact doesn't support orientation ? yet");
-      for (int i = 0; i < n; i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
         int v = a[i] * sd.omod + a[i + n];
         if (nn <= 62) {
           emitcompact(v);
@@ -308,7 +315,8 @@ void emitmp(const puzdef &pd, setval p, const char *, int fixmoves) {
     } else {
       cout << "   " << pd.setdefs[i].name << endl;
       cout << "  ";
-      for (int j = 0; j < n; j++)
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++)
         if (pd.setdefs[i].pack.size())
           cout << " " << (int)(pd.setdefs[i].unpack[a[j]] + 1);
         else
@@ -317,16 +325,20 @@ void emitmp(const puzdef &pd, setval p, const char *, int fixmoves) {
       if (sd.omod > 1) {
         cout << "  ";
         if (fixmoves) {
-          for (int i = 0; i < n; i++)
+          #pragma acc parallel loop
+for (int i = 0; i < n; i++)
             if (a[i + n] >= sd.omod)
               error("! moves don't support orientation ? yet");
           vector<int> newori(n);
-          for (int i = 0; i < n; i++)
+          #pragma acc parallel loop
+for (int i = 0; i < n; i++)
             newori[a[i]] = a[i + n];
-          for (int i = 0; i < n; i++)
+          #pragma acc parallel loop
+for (int i = 0; i < n; i++)
             cout << " " << newori[i];
         } else {
-          for (int i = 0; i < n; i++)
+          #pragma acc parallel loop
+for (int i = 0; i < n; i++)
             if (a[i + n] >= sd.omod)
               cout << " ?";
             else
@@ -366,7 +378,8 @@ static struct emitposcmd : cmd {
 void showrandompos(const puzdef &pd) {
   stacksetval p1(pd), p2(pd);
   pd.assignpos(p1, pd.solved);
-  for (int i = 0; i < 500; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < 500; i++) {
     int mv = myrand(pd.moves.size());
     pd.mul(p1, pd.moves[mv].pos, p2);
     mv = myrand(pd.moves.size());
@@ -398,7 +411,8 @@ void processlines(const puzdef &pd,
     vector<allocsetval> movelist = parsemovelist_generously(pd, s.c_str());
     //    vector<int> moveid = parsemovelist(pd, s.c_str()) ;
     globalinputmovecount = movelist.size();
-    for (int i = 0; i < (int)movelist.size(); i++)
+    #pragma acc parallel loop
+for (int i = 0; i < (int)movelist.size(); i++)
       domove(pd, p1, movelist[i]);
     f(pd, p1, s.c_str());
   }
@@ -412,7 +426,8 @@ void processlines2(const puzdef &pd,
     vector<allocsetval> movelist = parsemovelist_generously(pd, s.c_str());
     //    vector<int> moveid = parsemovelist(pd, s.c_str()) ;
     globalinputmovecount = movelist.size();
-    for (int i = 0; i < (int)movelist.size(); i++)
+    #pragma acc parallel loop
+for (int i = 0; i < (int)movelist.size(); i++)
       domove(pd, p1, movelist[i]);
     f(pd, p1, s.c_str());
   }

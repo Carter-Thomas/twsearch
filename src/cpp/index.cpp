@@ -87,22 +87,27 @@ ull mpermtoindex(const uchar *perm, int n) {
   ull r = 0;
   int cnt[64], obit[64];
   int cntn = -1;
-  for (int i = 0; i < n; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
     cntn = max(cntn, (int)perm[i]);
   }
   cntn++;
-  for (int i = 0; i < cntn; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < cntn; i++) {
     cnt[i] = 0;
     obit[i] = 0;
   }
-  for (int i = 0; i < n; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
     cnt[perm[i]]++;
   }
-  for (int i = 1; i < cntn; i++)
+  #pragma acc parallel loop
+for (int i = 1; i < cntn; i++)
     obit[i] = obit[i - 1] + cnt[i - 1];
   ull seen = ~0ULL;
   ull x = 1;
-  for (int i = 0; i < n; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
     int pi = perm[i];
     r = r * (n - i) + popcountll(seen & ((1ULL << obit[pi]) - 1)) * x;
     x = x * cnt[pi]--;
@@ -120,22 +125,27 @@ ull mpermtoindex(const uchar *perm, int n) {
 void indextomperm(uchar *perm, ull ind, const vector<int> &cnts) {
   int n = 0;
   int dcnts[64];
-  for (int i = 0; i < (int)cnts.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)cnts.size(); i++) {
     dcnts[i] = cnts[i];
     n += cnts[i];
   }
   int dn = n;
   ull x = 1;
-  for (int i = 0; i < (int)cnts.size(); i++)
-    for (int j = 1; j <= cnts[i]; j++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)cnts.size(); i++)
+    #pragma acc parallel loop
+for (int j = 1; j <= cnts[i]; j++) {
       if (x < (1ULL << 58))
         x = x * dn / j;
       else
         x = x / j * dn + x % j * dn / j;
       dn--;
     }
-  for (int i = 0; i < n; i++)
-    for (int j = 0; j < (int)cnts.size(); j++) {
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++)
+    #pragma acc parallel loop
+for (int j = 0; j < (int)cnts.size(); j++) {
       if (dcnts[j] == 0)
         continue;
       ull x2;
@@ -155,14 +165,16 @@ void indextomperm(uchar *perm, ull ind, const vector<int> &cnts) {
 ll ordstoindex(const uchar *p, int omod, int n) {
   ull r = 0;
   ull m = 1;
-  for (int i = 0; i + 1 < n; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i + 1 < n; i++) {
     r += m * p[i];
     m *= omod;
   }
   return r + m * p[n - 1];
 }
 void indextoords(uchar *p, ull v, int omod, int n) {
-  for (int i = 0; i < n; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
     ull nv = v / omod;
     p[i] = v - nv * omod;
     v = nv;
@@ -170,7 +182,8 @@ void indextoords(uchar *p, ull v, int omod, int n) {
 }
 void indextoords2(uchar *p, ull v, int omod, int n) {
   int s = 0;
-  for (int i = 0; i + 1 < n; i++) {
+  #pragma acc parallel loop
+for (int i = 0; i + 1 < n; i++) {
     ull nv = v / omod;
     p[i] = v - nv * omod;
     s += p[i];
@@ -184,7 +197,8 @@ ull densepack(const puzdef &pd, setval pos) {
   uchar *p = pos.dat;
   if (pd.wildo)
     error("! can't call densepack if orientation wildcards used.");
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     if (n > 1) {
@@ -216,7 +230,8 @@ void denseunpack(const puzdef &pd, ull v, setval pos) {
   uchar *p = pos.dat;
   if (pd.wildo)
     error("! can't call denseunpack if orientation wildcards used.");
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     if (n > 1) {
@@ -249,7 +264,8 @@ ull densepack_ordered(const puzdef &pd, setval pos) {
   if (pd.wildo)
     error("! can't call densepack_ordered if orientation wildcards used.");
   ull r = 0;
-  for (int ii = 0; ii < (int)parts.size(); ii++) {
+  #pragma acc parallel loop
+for (int ii = 0; ii < (int)parts.size(); ii++) {
     int sdpair = parts[ii].second;
     const setdef &sd = pd.setdefs[sdpair >> 1];
     int n = sd.size;
@@ -277,7 +293,8 @@ ull denseunpack_ordered(const puzdef &pd, ull v, setval pos) {
   if (pd.wildo)
     error("! can't call denseunpack_ordered if orientation wildcards used.");
   ull r = 0;
-  for (int ii = (int)parts.size() - 1; ii >= 0; ii--) {
+  #pragma acc parallel loop
+for (int ii = (int)parts.size() - 1; ii >= 0; ii--) {
     int sdpair = parts[ii].second;
     const setdef &sd = pd.setdefs[sdpair >> 1];
     int n = sd.size;
@@ -310,7 +327,8 @@ void calclooseper(const puzdef &pd) {
   if (looseper)
     return;
   int bits = 0, ibits = 0;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     bits += sd.pbits * (n - 1);
@@ -351,12 +369,14 @@ void loosepack(const puzdef &pd, setval pos, loosetype *w, int fromid,
   }
   ull accum = 0;
   int storedbits = 0;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     if (n > 1) {
       int bitsper = (fromid ? sd.pibits : sd.pbits);
-      for (int j = 0; j + 1 < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j + 1 < n; j++) {
         if (bitsper + storedbits > 64) {
           *w++ = accum;
           accum >>= BITSPERLOOSE;
@@ -370,7 +390,8 @@ void loosepack(const puzdef &pd, setval pos, loosetype *w, int fromid,
     if (sd.wildo) {
       int lim = n;
       int bitsper = sd.obits;
-      for (int j = 0; j < lim; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
         if (bitsper + storedbits > 64) {
           *w++ = accum;
           accum >>= BITSPERLOOSE;
@@ -383,7 +404,8 @@ void loosepack(const puzdef &pd, setval pos, loosetype *w, int fromid,
     } else if (sd.omod != 1) {
       int lim = (sd.oparity ? n - 1 : n);
       int bitsper = sd.obits;
-      for (int j = 0; j < lim; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
         if (bitsper + storedbits > 64) {
           *w++ = accum;
           accum >>= BITSPERLOOSE;
@@ -417,14 +439,16 @@ void looseunpack(const puzdef &pd, setval pos, loosetype *r) {
   }
   ull accum = 0;
   int storedbits = 0;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     const setdef &sd = pd.setdefs[i];
     int n = sd.size;
     if (n > 1) {
       int bitsper = sd.pbits;
       ull mask = (1 << bitsper) - 1;
       int msum = 0;
-      for (int j = 0; j + 1 < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j + 1 < n; j++) {
         if (storedbits < bitsper) {
           accum += ((ull)(*r++)) << storedbits;
           storedbits += BITSPERLOOSE;
@@ -444,7 +468,8 @@ void looseunpack(const puzdef &pd, setval pos, loosetype *r) {
       int bitsper = sd.obits;
       ull mask = (1 << bitsper) - 1;
       // int msum = 0 ;
-      for (int j = 0; j < lim; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
         if (storedbits < bitsper) {
           accum += ((ull)(*r++)) << storedbits;
           storedbits += BITSPERLOOSE;
@@ -461,7 +486,8 @@ void looseunpack(const puzdef &pd, setval pos, loosetype *r) {
       int bitsper = sd.obits;
       ull mask = (1 << bitsper) - 1;
       int msum = 0;
-      for (int j = 0; j < lim; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
         if (storedbits < bitsper) {
           accum += ((ull)(*r++)) << storedbits;
           storedbits += BITSPERLOOSE;
@@ -474,7 +500,8 @@ void looseunpack(const puzdef &pd, setval pos, loosetype *r) {
       if (sd.oparity)
         p[n - 1] = msum % sd.omod;
     } else {
-      for (int j = 0; j < n; j++)
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++)
         p[j] = 0;
     }
     p += n;
@@ -504,7 +531,8 @@ void loosepackone(const puzdef &pd, setval pos, int sdi, loosetype *w,
   p += sd.off;
   if (n > 1) {
     int bitsper = (fromid ? sd.pibits : sd.pbits);
-    for (int j = 0; j + 1 < n; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j + 1 < n; j++) {
       if (bitsper + storedbits > 64) {
         *w++ = accum;
         accum >>= BITSPERLOOSE;
@@ -518,7 +546,8 @@ void loosepackone(const puzdef &pd, setval pos, int sdi, loosetype *w,
   if (sd.wildo) {
     int lim = n;
     int bitsper = sd.obits;
-    for (int j = 0; j < lim; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
       if (bitsper + storedbits > 64) {
         *w++ = accum;
         accum >>= BITSPERLOOSE;
@@ -531,7 +560,8 @@ void loosepackone(const puzdef &pd, setval pos, int sdi, loosetype *w,
   } else if (sd.omod != 1) {
     int lim = (sd.oparity ? n - 1 : n);
     int bitsper = sd.obits;
-    for (int j = 0; j < lim; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
       if (bitsper + storedbits > 64) {
         *w++ = accum;
         accum >>= BITSPERLOOSE;
@@ -567,7 +597,8 @@ void looseunpackone(const puzdef &pd, setval pos, int sdi, loosetype *r) {
     int bitsper = sd.pbits;
     ull mask = (1 << bitsper) - 1;
     int msum = 0;
-    for (int j = 0; j + 1 < n; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j + 1 < n; j++) {
       if (storedbits < bitsper) {
         accum += ((ull)(*r++)) << storedbits;
         storedbits += BITSPERLOOSE;
@@ -587,7 +618,8 @@ void looseunpackone(const puzdef &pd, setval pos, int sdi, loosetype *r) {
     int bitsper = sd.obits;
     ull mask = (1 << bitsper) - 1;
     // int msum = 0 ;
-    for (int j = 0; j < lim; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
       if (storedbits < bitsper) {
         accum += ((ull)(*r++)) << storedbits;
         storedbits += BITSPERLOOSE;
@@ -604,7 +636,8 @@ void looseunpackone(const puzdef &pd, setval pos, int sdi, loosetype *r) {
     int bitsper = sd.obits;
     ull mask = (1 << bitsper) - 1;
     int msum = 0;
-    for (int j = 0; j < lim; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < lim; j++) {
       if (storedbits < bitsper) {
         accum += ((ull)(*r++)) << storedbits;
         storedbits += BITSPERLOOSE;
@@ -617,7 +650,8 @@ void looseunpackone(const puzdef &pd, setval pos, int sdi, loosetype *r) {
     if (sd.oparity)
       p[n - 1] = msum % sd.omod;
   } else {
-    for (int j = 0; j < n; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < n; j++)
       p[j] = 0;
   }
 }

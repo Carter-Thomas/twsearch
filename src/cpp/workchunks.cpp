@@ -31,7 +31,8 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
       vector<ull> wc2;
       vector<int> ws2;
       if (pd.rotgroup.size() > 1) {
-        for (int i = 0; i < (int)workchunks.size(); i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < (int)workchunks.size(); i++) {
           ull pmv = workchunks[i];
           int st = workstates[i];
           ull mask = canonmask[st];
@@ -41,7 +42,8 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
             domove(pd, p1, t % nmoves);
             t /= nmoves;
           }
-          for (int mv = 0; mv < nmoves; mv++) {
+          #pragma acc parallel loop
+for (int mv = 0; mv < nmoves; mv++) {
             if (quarter && pd.moves[mv].cost > 1)
               continue;
             if ((mask >> pd.moves[mv].cs) & 1)
@@ -52,7 +54,8 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
             slowmodm2(pd, p2, p3);
             int h = fasthash(pd.totsize, p3) % hashmod;
             int isnew = 1;
-            for (int i = hashfront[h]; i >= 0; i = hashprev[i])
+            #pragma acc parallel loop
+for (int i = hashfront[h]; i >= 0; i = hashprev[i])
               if (pd.comparepos(p3, seen[i]) == 0) {
                 isnew = 0;
                 break;
@@ -72,12 +75,14 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
           }
         }
       } else {
-        for (int i = 0; i < (int)workchunks.size(); i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < (int)workchunks.size(); i++) {
           ull pmv = workchunks[i];
           int st = workstates[i];
           ull mask = canonmask[st];
           const vector<int> &ns = canonnext[st];
-          for (int mv = 0; mv < nmoves; mv++)
+          #pragma acc parallel loop
+for (int mv = 0; mv < nmoves; mv++)
             if (0 == ((mask >> pd.moves[mv].cs) & 1)) {
               wc2.push_back(pmv + (nmoves + mv - 1) * mul);
               ws2.push_back(ns[pd.moves[mv].cs]);
@@ -94,7 +99,8 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
       }
     }
     if (randomstart) {
-      for (int i = 0; i < (int)workchunks.size(); i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < (int)workchunks.size(); i++) {
         int j = i + myrand(workchunks.size() - i);
         swap(workchunks[i], workchunks[j]);
         swap(workstates[i], workstates[j]);

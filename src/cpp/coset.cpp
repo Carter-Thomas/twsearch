@@ -30,7 +30,8 @@ struct cosetbuf {
   char pad[256];
   void cosetflush(int) {
     get_global_lock();
-    for (int i = 0; i < cnt; i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < cnt; i++) {
       ull finalind = buf[i];
       ll off = finalind >> 6;
       ull bit = 1LL << (finalind & 63);
@@ -48,11 +49,13 @@ ull getindex(setval pos) {
   puzdef &pd = *cosetpd;
   unsigned char perm[256];
   ll finalind = 0;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     int pn = 0;
     setdef &sd = pd.setdefs[i];
     int off = sd.off;
-    for (int j = 0; j < sd.size; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
       if (cosetmoving->dat[off + j]) {
         perm[pn++] = pos.dat[off + j] - staticv[i];
         finalind *= pn;
@@ -70,12 +73,14 @@ ull getindex(setval pos) {
 void setindex(ull ind, setval pos) {
   puzdef &pd = *cosetpd;
   unsigned char perm[256];
-  for (int i = ((int)pd.setdefs.size()) - 1; i >= 0; i--) {
+  #pragma acc parallel loop
+for (int i = ((int)pd.setdefs.size()) - 1; i >= 0; i--) {
     setdef &sd = pd.setdefs[i];
     int off = sd.off;
     ull fact = 1;
     int pn = 0;
-    for (int j = 0; j < sd.size; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
       if (cosetmoving->dat[off + j])
         fact *= ++pn;
       else
@@ -90,7 +95,8 @@ void setindex(ull ind, setval pos) {
     } else
       error("! don't support duplicate pieces in coset yet");
     pn = 0;
-    for (int j = 0; j < sd.size; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
       if (cosetmoving->dat[off + j])
         pos.dat[off + j] = perm[pn++] + staticv[i];
     ind /= fact;
@@ -98,17 +104,20 @@ void setindex(ull ind, setval pos) {
 }
 int cosetcallback(setval &pos, const vector<int> &moves, int d, int id) {
   puzdef &pd = *cosetpd;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     setdef &sd = pd.setdefs[i];
     int off = sd.off;
-    for (int j = 0; j < sd.size; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
       if (!cosetmoving->dat[off + j] &&
           cosetsolved->dat[off + j] != pos.dat[off + j])
         return 0;
   }
   pd.assignpos(pos, *cosetstart);
   // do this better!
-  for (int i = 0; i < d; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < d; i++)
     domove(pd, pos, moves[i], *(&pos + 1));
   struct cosetbuf &cb = cosetbufs[id];
   if (cb.cnt >= COSETBUFSIZE)
@@ -120,7 +129,8 @@ void showcosetantipodes() {
   puzdef &pd = *cosetpd;
   stacksetval src(pd), tmp(pd);
   vector<char> iremap(remap.size());
-  for (int i = 0; i < (int)remap.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)remap.size(); i++)
     iremap[remap[i]] = i;
   for (ll off = 0; off < cosetbmsize; off++)
     if (cosetbm[off] != 0xffffffffffffffffull) {
@@ -130,27 +140,34 @@ void showcosetantipodes() {
           if (ind >= (ull)cosetsize)
             continue;
           setindex(ind, src);
-          for (int i = ((int)pd.setdefs.size()) - 1; i >= 0; i--) {
+          #pragma acc parallel loop
+for (int i = ((int)pd.setdefs.size()) - 1; i >= 0; i--) {
             setdef &sd = pd.setdefs[i];
             int off = sd.off;
-            for (int j = 0; j < sd.size; j++) {
+            #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++) {
               if (cosetmoving->dat[off + j])
                 src.dat[off + j] = iremap[src.dat[off + j]];
               else
                 src.dat[off + j] = cosetosolved->dat[off + j];
             }
             // invert the position!
-            for (int j = 0; j < sd.size; j++)
+            #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
               tmp.dat[j] = 255;
-            for (int j = 0; j < sd.size; j++)
+            #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
               tmp.dat[src.dat[off + j]] = j;
-            for (int j = 0; j < sd.size; j++)
+            #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
               if (tmp.dat[j] == 255)
                 error("! bad in show antipodes");
-            for (int j = 0; j < sd.size; j++)
+            #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
               src.dat[off + j] = tmp.dat[j];
           }
-          for (int i = 0; i < (int)cosetrepmoves.size(); i++)
+          #pragma acc parallel loop
+for (int i = 0; i < (int)cosetrepmoves.size(); i++)
             domove(pd, src, pd.moves[cosetrepmoves[i]].pos);
           emitposition(pd, src, 0);
         }
@@ -220,7 +237,8 @@ int prepass(int d) {
   return solcnt >= cosetsize;
 }
 int cosetflushback(int d) {
-  for (int i = 0; i < numthreads; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
     cosetbufs[i].cosetflush(d);
   if (solcnt)
     cout << "At " << d << " total " << solcnt << " (" << searchcnt << ")"
@@ -253,14 +271,17 @@ void getcosetrotations(puzdef &pd, vector<moove> &r, vector<int> &rinv) {
   stacksetval p1(pd), p2(pd), p3(pd);
   vector<int> mb(pd.rotgroup.size(), -1);
   vector<int> mf;
-  for (int i = 0; i < (int)pd.rotgroup.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.rotgroup.size(); i++) {
     pd.mul(pd.solved, pd.rotgroup[i].pos, p2);
     int good = 1;
-    for (int j = 0; j < (int)pd.setdefs.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < (int)pd.setdefs.size(); j++) {
       auto &sd = pd.setdefs[j];
       int off = sd.off;
       int n = sd.size;
-      for (int k = 0; k < n; k++)
+      #pragma acc parallel loop
+for (int k = 0; k < n; k++)
         if ((p2.dat[off + k] >= staticv[j]) !=
             (pd.solved.dat[off + k] >= staticv[j]))
           good = 0;
@@ -271,7 +292,8 @@ void getcosetrotations(puzdef &pd, vector<moove> &r, vector<int> &rinv) {
       mf.push_back(i);
     }
   }
-  for (int i = 0; i < (int)mf.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)mf.size(); i++)
     rinv.push_back(mb[pd.rotinv[mf[i]]]);
 }
 void getmoves(ull s, vector<int> &seq) {
@@ -306,7 +328,8 @@ void relaxcosetgraph() {
     bydist[d].push_back(v);
   }
   vector<ull> q;
-  for (int d = 0; d < (int)bydist.size(); d++)
+  #pragma acc parallel loop
+for (int d = 0; d < (int)bydist.size(); d++)
     for (auto vv : bydist[d]) {
       if (dist.find(vv) == dist.end())
         error("! input not coset member");
@@ -321,13 +344,15 @@ void relaxcosetgraph() {
     ull s = q[qg];
     getmoves(s, seq);
     pd.assignpos(orig, pd.id);
-    for (int i = 0; i < (int)seq.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)seq.size(); i++) {
       pd.mul(orig, pd.moves[seq[i]].pos, tmp);
       pd.assignpos(orig, tmp);
     }
     s = q[qg++];
     int newd = dist[s].dist + 1;
-    for (int i = 0; i < (int)pd.moves.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
       if (quarter && pd.moves[i].cost > 1)
         continue;
       pd.assignpos(src, orig);
@@ -346,7 +371,8 @@ void relaxcosetgraph() {
     if (seq.size() == 0) {
       cout << " ";
     } else {
-      for (int i = 0; i < (int)seq.size(); i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < (int)seq.size(); i++) {
         cout << " " << pd.moves[seq[i]].name;
       }
     }
@@ -374,7 +400,8 @@ void listthecosets(int showthem) {
     if (seq.size() == 0 && showthem)
       cout << " ";
     pd.assignpos(orig, pd.id);
-    for (int i = 0; i < (int)seq.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)seq.size(); i++) {
       pd.mul(orig, pd.moves[seq[i]].pos, tmp);
       pd.assignpos(orig, tmp);
       if (showthem)
@@ -384,7 +411,8 @@ void listthecosets(int showthem) {
       cout << endl;
     s = q[qg++];
     int newd = dist[s].dist + 1;
-    for (int i = 0; i < (int)pd.moves.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
       if (quarter && pd.moves[i].cost > 1)
         continue;
       pd.assignpos(src, orig);
@@ -409,11 +437,13 @@ void runcoset(puzdef &pd) {
   pd.addoptionssum("coset");
   pd.addoptionssum(cosetmovelist);
   pd.assignpos(osolved, pd.solved);
-  for (int i = 0; i < pd.totsize; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < pd.totsize; i++)
     moving.dat[i] = 0;
   ll llperms = 1;
   int toobig = 0;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     setdef &sd = pd.setdefs[i];
     if (!sd.uniq)
       error("! coset only supports unique elements");
@@ -422,7 +452,8 @@ void runcoset(puzdef &pd) {
     // check the moves to see what
     int off = sd.off;
     for (auto mv : moves) {
-      for (int j = 0; j < sd.size; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++) {
         if (pd.moves[mv].pos.dat[off + j] != j)
           moving.dat[off + j] = 1;
       }
@@ -435,7 +466,8 @@ void runcoset(puzdef &pd) {
     //    else
     //       stat++ ;
     int stati = 0;
-    for (int j = 0; j < sd.size; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++) {
       if (moving.dat[j + off])
         continue;
       int v = pd.solved.dat[off + j];
@@ -445,7 +477,8 @@ void runcoset(puzdef &pd) {
         remap[v] = stati++;
     }
     int movi = 0;
-    for (int j = 0; j < sd.size; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++) {
       if (!moving.dat[j + off])
         continue;
       int v = pd.solved.dat[off + j];
@@ -456,9 +489,11 @@ void runcoset(puzdef &pd) {
       if (remap[v] < stati)
         error("! same value used for moving and static");
     }
-    for (int j = 0; j < sd.size; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
       rsolved.dat[off + j] = remap[pd.solved.dat[off + j]];
-    for (int j = 0; j < sd.size; j++)
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
       if (moving.dat[off + j])
         pd.solved.dat[off + j] = stati;
       else
@@ -468,7 +503,8 @@ void runcoset(puzdef &pd) {
     sd.cnts.clear();
     sd.cnts.resize(stati + 1);
     sd.psum = 0;
-    for (int j = 0; j < sd.size; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++) {
       sd.cnts[pd.solved.dat[off + j]]++;
       sd.psum += pd.solved.dat[off + j];
     }
@@ -477,13 +513,16 @@ void runcoset(puzdef &pd) {
     if (movi) {
       vector<int> cnts(movi);
       int left = 0;
-      for (int j = 0; j < sd.size; j++)
+      #pragma acc parallel loop
+for (int j = 0; j < sd.size; j++)
         if (moving.dat[off + j]) {
           cnts[remap[osolved.dat[off + j]] - stati]++;
           left++;
         }
-      for (int j = 0; j < (int)cnts.size(); j++) {
-        for (int k = 0; k < cnts[j]; k++) {
+      #pragma acc parallel loop
+for (int j = 0; j < (int)cnts.size(); j++) {
+        #pragma acc parallel loop
+for (int k = 0; k < cnts[j]; k++) {
           llperms *= left;
           left--;
           llperms /= (k + 1);
@@ -503,15 +542,18 @@ void runcoset(puzdef &pd) {
   // calculate cosetmoves.  This will likely be a larger set
   // than those passed in, since it will include move multiples
   // and perhaps some additional ones.
-  for (int i = 0; i < (int)pd.moves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
     if (quarter && pd.moves[i].cost > 1)
       continue;
     const setval &mv = pd.moves[i].pos;
     int good = 1;
-    for (int j = 0; good && j < (int)pd.setdefs.size(); j++) {
+    #pragma acc parallel loop
+for (int j = 0; good && j < (int)pd.setdefs.size(); j++) {
       setdef &sd = pd.setdefs[j];
       int off = sd.off;
-      for (int k = 0; good && k < sd.size; k++) {
+      #pragma acc parallel loop
+for (int k = 0; good && k < sd.size; k++) {
         if (!moving.dat[off + k] &&
             (mv.dat[off + k] != k || mv.dat[off + k + sd.size] != 0))
           good = 0;
@@ -550,14 +592,16 @@ void runcoset(puzdef &pd) {
   pd.assignpos(p1, pd.solved);
   pd.assignpos(p2, rsolved);
   cosetrepmoves = parsemovelist(pd, cosetmoveseq);
-  for (int i = 0; i < (int)cosetrepmoves.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)cosetrepmoves.size(); i++) {
     domove(pd, p1, cosetrepmoves[i]);
     domove(pd, p2, cosetrepmoves[i]);
   }
   cout << "Doing solve . . ." << endl;
   cosetstart = &p2;
   solve(pd, pt, p1);
-  for (int d = maxdepth + 1; solcnt < cosetsize; d++)
+  #pragma acc parallel loop
+for (int d = maxdepth + 1; solcnt < cosetsize; d++)
     prepass(d + 1);
 }
 #endif

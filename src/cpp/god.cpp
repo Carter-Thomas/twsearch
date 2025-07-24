@@ -43,7 +43,8 @@ void odotwobitgod(puzdef &pd) {
   cnts.clear();
   cnts.push_back(1);
   ull tot = 1;
-  for (int d = 0;; d++) {
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
     resetantipodes();
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " in "
          << duration() << endl
@@ -61,10 +62,12 @@ void odotwobitgod(puzdef &pd) {
         ull checkv = mem[bigi];
         checkv = (checkv & 0x5555555555555555LL) &
                  ((checkv >> 1) & 0x5555555555555555LL);
-        for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
+        #pragma acc parallel loop
+for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
           checkv -= 1LL << (smi - 1);
           denseunpack(pd, (bigi << 5) + (smi >> 1), p1);
-          for (int i = 0; i < (int)pd.moves.size(); i++) {
+          #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
             if (quarter && pd.moves[i].cost > 1)
               continue;
             pd.mul(p1, pd.moves[i].pos, p2);
@@ -87,10 +90,12 @@ void odotwobitgod(puzdef &pd) {
         ull checkv = mem[bigi] ^ xorv;
         checkv = (checkv & 0x5555555555555555LL) &
                  ((checkv >> 1) & 0x5555555555555555LL);
-        for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
+        #pragma acc parallel loop
+for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
           checkv -= 1LL << (smi - 1);
           denseunpack(pd, (bigi << 5) + (smi >> 1), p1);
-          for (int i = 0; i < (int)pd.moves.size(); i++) {
+          #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
             if (quarter && pd.moves[i].cost > 1)
               continue;
             pd.mul(p1, pd.moves[i].pos, p2);
@@ -133,8 +138,10 @@ void dotwobitgod(puzdef &pd) {
   ull nind[NINDBUF];
   ull soffa[NINDBUF];
   int wnind = 0;
-  for (int d = 0;; d++) {
-    for (int i = 0; i < NINDBUF; i++)
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
+    #pragma acc parallel loop
+for (int i = 0; i < NINDBUF; i++)
       nind[i] = NOVAL;
     resetantipodes();
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " in "
@@ -153,13 +160,15 @@ void dotwobitgod(puzdef &pd) {
           continue;
         ull checkv = (membigi & 0x5555555555555555LL) &
                      ((membigi >> 1) & 0x5555555555555555LL);
-        for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
+        #pragma acc parallel loop
+for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
           checkv -= 1LL << (smi - 1);
           ull srci = (bigi << 5) + (smi >> 1);
           if (srci >= pd.llstates)
             continue;
           denseunpack(pd, srci, p1);
-          for (int i = 0; i < (int)pd.moves.size(); i++) {
+          #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
             if (quarter && pd.moves[i].cost > 1)
               continue;
             pd.mul(p1, pd.moves[i].pos, p2);
@@ -183,7 +192,8 @@ void dotwobitgod(puzdef &pd) {
           }
         }
       }
-      for (int i = 0; i < NINDBUF; i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < NINDBUF; i++) {
         off = nind[wnind];
         if (off != NOVAL) {
           ull soff = soffa[wnind];
@@ -207,10 +217,12 @@ void dotwobitgod(puzdef &pd) {
         ull checkv = mem[bigi] ^ xorv;
         checkv = (checkv & 0x5555555555555555LL) &
                  ((checkv >> 1) & 0x5555555555555555LL);
-        for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
+        #pragma acc parallel loop
+for (int smi = ffsll(checkv); checkv; smi = ffsll(checkv)) {
           checkv -= 1LL << (smi - 1);
           denseunpack(pd, (bigi << 5) + (smi >> 1), p1);
-          for (int i = 0; i < (int)pd.moves.size(); i++) {
+          #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
             if (quarter && pd.moves[i].cost > 1)
               continue;
             pd.mul(p1, pd.moves[i].pos, p2);
@@ -230,7 +242,8 @@ void dotwobitgod(puzdef &pd) {
           }
         }
       }
-      for (int i = 0; i < NINDBUF; i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < NINDBUF; i++) {
         off = nind[wnind];
         if (off != NOVAL) {
           int v = 3 & (mem[off >> 5] >> (2 * (off & 31)));
@@ -268,15 +281,18 @@ unsigned int *symc;
 ull *mem;
 void innerloop(int back, int seek, int newv, ull sofar, vector<ull> &muld) {
   sofar *= symcoordsize;
-  for (int i = 0; i < nmoves; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < nmoves; i++)
     muld[i] *= symcoordsize;
   unsigned int *symtab = symc;
   if (back) {
-    for (int smoff = 0; smoff < symcoordsize; smoff++, symtab += nmoves) {
+    #pragma acc parallel loop
+for (int smoff = 0; smoff < symcoordsize; smoff++, symtab += nmoves) {
       ull off = sofar + smoff;
       int v = 3 & (mem[off >> 5] >> (2 * (off & 31)));
       if (v == 3) {
-        for (int m = 0; m < nmoves; m++) {
+        #pragma acc parallel loop
+for (int m = 0; m < nmoves; m++) {
           ull off2 = muld[m] + symtab[m];
           int v2 = 3 & (mem[off2 >> 5] >> (2 * (off2 & 31)));
           if (v2 == seek) {
@@ -289,7 +305,8 @@ void innerloop(int back, int seek, int newv, ull sofar, vector<ull> &muld) {
       }
     }
   } else {
-    for (int smoff = 0; smoff < symcoordsize; smoff++, symtab += nmoves) {
+    #pragma acc parallel loop
+for (int smoff = 0; smoff < symcoordsize; smoff++, symtab += nmoves) {
       ull off = sofar + smoff;
       if (mem[off >> 5] == 0xffffffffffffffffLL) {
         int acc = 31 - (off & 31);
@@ -299,7 +316,8 @@ void innerloop(int back, int seek, int newv, ull sofar, vector<ull> &muld) {
       }
       int v = 3 & (mem[off >> 5] >> (2 * (off & 31)));
       if (v == seek) {
-        for (int m = 0; m < nmoves; m++) {
+        #pragma acc parallel loop
+for (int m = 0; m < nmoves; m++) {
           ull off2 = muld[m] + symtab[m];
           int v2 = 3 & (mem[off2 >> 5] >> (2 * (off2 & 31)));
           if (v2 == 3) {
@@ -332,7 +350,8 @@ void recur(puzdef &pd, int at, int back, int seek, int newv, ull sofar,
         indextoords2(wmem, val, sd.omod, sd.size);
       else
         indextoords(wmem, val, sd.omod, sd.size);
-      for (int m = 0; m < nmoves; m++) {
+      #pragma acc parallel loop
+for (int m = 0; m < nmoves; m++) {
         sd.mulo(wmem, pd.moves[movemap[m]].pos.dat + sd.off + sd.size, wmem2);
         if (sd.oparity)
           muld2[m] = ordstoindex(wmem2, sd.omod, sd.size - 1) + sz * muld[m];
@@ -351,7 +370,8 @@ void recur(puzdef &pd, int at, int back, int seek, int newv, ull sofar,
           indextoperm(wmem, val, sd.size);
       } else
         indextomperm(wmem, val, sd.cnts);
-      for (int m = 0; m < nmoves; m++) {
+      #pragma acc parallel loop
+for (int m = 0; m < nmoves; m++) {
         sd.mulp(wmem, pd.moves[movemap[m]].pos.dat + sd.off, wmem2);
         if (sd.uniq) {
           if (sd.pparity)
@@ -373,11 +393,13 @@ void dotwobitgod2(puzdef &pd) {
    */
   parts.clear();
   movemap.clear();
-  for (int i = 0; i < (int)pd.moves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
     if (!quarter || pd.moves[i].cost == 1)
       movemap.push_back(i);
   nmoves = movemap.size();
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     setdef &sd = pd.setdefs[i];
     if (!sd.dense)
       error("! we don't support dense packing of this puzzle yet");
@@ -411,7 +433,8 @@ void dotwobitgod2(puzdef &pd) {
     return;
   }
   cout << "Sizes [";
-  for (int i = 0; i < (int)parts.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)parts.size(); i++) {
     if (i)
       cout << " ";
     cout << parts[i].first;
@@ -434,14 +457,16 @@ void dotwobitgod2(puzdef &pd) {
     uchar *wmem2 = p2.dat;
     ull u = i;
     ull mul = 1;
-    for (int j = parts.size() - 1; j + numsym >= (int)parts.size(); j--) {
+    #pragma acc parallel loop
+for (int j = parts.size() - 1; j + numsym >= (int)parts.size(); j--) {
       int sdpair = parts[j].second;
       setdef &sd = pd.setdefs[sdpair >> 1];
       if (sdpair & 1) {
         ull sz = sd.llords;
         ull val = u % sz;
         u /= sz;
-        for (int m = 0; m < nmoves; m++) {
+        #pragma acc parallel loop
+for (int m = 0; m < nmoves; m++) {
           if (sd.oparity)
             indextoords2(wmem, val, sd.omod, sd.size);
           else
@@ -457,7 +482,8 @@ void dotwobitgod2(puzdef &pd) {
         ull sz = sd.llperms;
         ull val = u % sz;
         u /= sz;
-        for (int m = 0; m < nmoves; m++) {
+        #pragma acc parallel loop
+for (int m = 0; m < nmoves; m++) {
           if (sd.uniq) {
             if (sd.pparity)
               indextoperm2(wmem, val, sd.size);
@@ -490,7 +516,8 @@ void dotwobitgod2(puzdef &pd) {
   cnts.clear();
   cnts.push_back(1);
   ull tot = 1;
-  for (int d = 0;; d++) {
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
     resetantipodes();
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " in "
          << duration() << endl
@@ -536,7 +563,8 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
   if (at == (int)mt.size() - 1) {
     ull wid = mt[at].mult >> 5;
     roff *= wid;
-    for (int mv = 0; mv < nmoves; mv++)
+    #pragma acc parallel loop
+for (int mv = 0; mv < nmoves; mv++)
       offsets[at * nmoves + mv] *= mt[at].mult;
     if (back) { // backwards
       ull xormask = 0xffffffffffffffffLL;
@@ -550,7 +578,8 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
           ull ofr = (o << 5) + (o2 >> 1);
           if (ofr >= mt[at].numstates)
             break;
-          for (int mv = 0; mv < nmoves; mv++) {
+          #pragma acc parallel loop
+for (int mv = 0; mv < nmoves; mv++) {
             // cout << "Inmv sees" ;
             // for (auto v: offsets) cout << " " << v ;
             // cout << endl ;
@@ -578,7 +607,8 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
           int o2 = (ffsll(rd) - 1);
           rd &= ~(1LL << o2);
           ull ofr = (o << 5) + (o2 >> 1);
-          for (int mv = 0; mv < nmoves; mv++) {
+          #pragma acc parallel loop
+for (int mv = 0; mv < nmoves; mv++) {
             // cout << "Inmv sees" ;
             // for (auto v: offsets) cout << " " << v ;
             // cout << endl ;
@@ -598,7 +628,8 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
     }
   } else {
     for (ull v = 0; v < mt[at].numstates; v++) {
-      for (int mv = 0; mv < nmoves; mv++) {
+      #pragma acc parallel loop
+for (int mv = 0; mv < nmoves; mv++) {
         offsets[(at + 1) * nmoves + mv] =
             offsets[at * nmoves + mv] * mt[at].mult +
             mt[at].movetable[v * nmoves + mv];
@@ -618,18 +649,21 @@ static inline int compare(const void *a_, const void *b_, int looseper);
 void dotwobitgod3(puzdef &pd) {
   movemap.clear();
   vector<int> imoves;
-  for (int i = 0; i < (int)pd.moves.size(); i++)
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++)
     if (!quarter || pd.moves[i].cost == 1)
       movemap.push_back(i);
   for (auto mv : movemap) {
     int mvi = pd.invmove(mv);
-    for (int j = 0; j < (int)movemap.size(); j++)
+    #pragma acc parallel loop
+for (int j = 0; j < (int)movemap.size(); j++)
       if (movemap[j] == mvi)
         imoves.push_back(j);
   }
   nmoves = movemap.size();
   vector<setinfo> movetables;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     cout << "Freeing earlier work in " << duration() << endl;
     setdef &sd = pd.setdefs[i];
     int lp = looseperone(pd, i, 0);
@@ -646,7 +680,8 @@ void dotwobitgod3(puzdef &pd) {
     vector<levelinfo> li;
     li.push_back({0, 1, 0});
     ull orbase = 0;
-    for (int rd = 0;; rd++) {
+    #pragma acc parallel loop
+for (int rd = 0;; rd++) {
       ull rbase = li[rd].wbase;
       ull rcnt = li[rd].cnt;
       cout << "At dist " << rd << " see " << rcnt << endl;
@@ -656,7 +691,8 @@ void dotwobitgod3(puzdef &pd) {
         looseunpackone(pd, p1, i, &(workarr[(rbase + j) * lp]));
         while (workarr.size() < (wbase + wcnt + nmoves) * lp)
           workarr.push_back(0);
-        for (int mvi = 0; mvi < nmoves; mvi++) {
+        #pragma acc parallel loop
+for (int mvi = 0; mvi < nmoves; mvi++) {
           pd.mul(p1, pd.moves[movemap[mvi]].pos, p2);
           auto wptr = &(workarr[(wbase + wcnt) * lp]);
           loosepackone(pd, p2, i, wptr, 0, 0);
@@ -681,7 +717,8 @@ void dotwobitgod3(puzdef &pd) {
     ull wbase = li[li.size() - 1].wbase;
     if (wbase >= 4000000000LL)
       error("! too many states from this one set");
-    for (int rd = 0; rd < (int)li.size(); rd++) {
+    #pragma acc parallel loop
+for (int rd = 0; rd < (int)li.size(); rd++) {
       ull b = 1;
       while (b <= li[rd].cnt)
         b += b;
@@ -690,23 +727,27 @@ void dotwobitgod3(puzdef &pd) {
     unsigned int *mt = (unsigned int *)calloc(wbase, nmoves * sizeof(int));
     vector<loosetype> lptmp(lp);
     int lord[3];
-    for (int rd = 0; rd < (int)li.size(); rd++) {
+    #pragma acc parallel loop
+for (int rd = 0; rd < (int)li.size(); rd++) {
       int nordn = 0;
-      for (int pr = rd - 1; pr <= rd + 1; pr++)
+      #pragma acc parallel loop
+for (int pr = rd - 1; pr <= rd + 1; pr++)
         if (pr >= 0 && pr < (int)li.size())
           lord[nordn++] = pr;
       ll rbase = li[rd].wbase;
       ll rcnt = li[rd].cnt;
       for (ll j = 0; j < rcnt; j++) {
         looseunpackone(pd, p1, i, &(workarr[(rbase + j) * lp]));
-        for (int mvi = 0; mvi < nmoves; mvi++) {
+        #pragma acc parallel loop
+for (int mvi = 0; mvi < nmoves; mvi++) {
           if (mt[(li[rd].wbase + j) * nmoves + mvi])
             continue;
           pd.mul(p1, pd.moves[movemap[mvi]].pos, p2);
           auto wptr = &(lptmp[0]);
           loosepackone(pd, p2, i, wptr, 0, 0);
           ll found = 0xfffffffffffffffLL;
-          for (int pri = 0; pri < nordn; pri++) {
+          #pragma acc parallel loop
+for (int pri = 0; pri < nordn; pri++) {
             int pr = lord[pri];
             ull loc = 0;
             for (ull b = li[pr].startbit; b; b >>= 1) {
@@ -756,17 +797,20 @@ void dotwobitgod3(puzdef &pd) {
   ll totset = 0;
   ll bitsset = 1;
   ull levcnts[4];
-  for (int i = 0; i < 4; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < 4; i++)
     levcnts[i] = 0;
   levcnts[0] = totsize - 1;
   levcnts[1] = 1;
-  for (int rd = 0;; rd++) {
+  #pragma acc parallel loop
+for (int rd = 0;; rd++) {
     totset += bitsset;
     cout << "Dist " << rd << " " << bitsset << " " << totset << " in "
          << duration() << endl;
     int rdv = (rd % 3) + 1;
     int wrv = (rdv % 3) + 1;
-    for (int i = 0; i < nmoves; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < nmoves; i++)
       offsets[i] = 0;
     if (levcnts[rdv] < levcnts[0])
       bitsset = recur(movetables, offsets, 0, rdv, wrv, nmoves, 0, bits, 0);
@@ -833,7 +877,8 @@ void dotwobitgod4(puzdef &pd) {
 static inline int compare(const void *a_, const void *b_, int looseper) {
   loosetype *a = (loosetype *)a_;
   loosetype *b = (loosetype *)b_;
-  for (int i = 0; i < looseper; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < looseper; i++)
     if (a[i] != b[i])
       return (a[i] < b[i] ? -1 : 1);
   return 0;
@@ -930,7 +975,8 @@ static int doarraygodchunk(const puzdef *pd, loosetype *reader,
   stacksetval p1(*pd), p2(*pd), p3(*pd);
   for (loosetype *pr = reader; pr < levend; pr += looseper) {
     looseunpack(*pd, p1, pr);
-    for (int i = 0; i < (int)pd->moves.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd->moves.size(); i++) {
       if (quarter && pd->moves[i].cost > 1)
         continue;
       pd->mul(p1, pd->moves[i].pos, p2);
@@ -953,8 +999,10 @@ static int doarraygodsymchunk(const puzdef *pd, loosetype *reader,
   stacksetval p1(*pd), p2(*pd), p3(*pd), p4(*pd);
   for (loosetype *pr = reader; pr < levend; pr += looseper) {
     looseunpack(*pd, p1, pr);
-    for (int doinv = 0; doinv < 2; doinv++) {
-      for (int i = 0; i < (int)pd->moves.size(); i++) {
+    #pragma acc parallel loop
+for (int doinv = 0; doinv < 2; doinv++) {
+      #pragma acc parallel loop
+for (int i = 0; i < (int)pd->moves.size(); i++) {
         if (quarter && pd->moves[i].cost > 1)
           continue;
         pd->mul(p1, pd->moves[i].pos, p2);
@@ -1069,7 +1117,8 @@ void doarraygod(const puzdef &pd) {
   writer = mem + looseper;
   s_1 = mem;
   s_2 = mem;
-  for (int d = 0;; d++) {
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " in "
          << duration() << endl
          << flush;
@@ -1081,11 +1130,14 @@ void doarraygod(const puzdef &pd) {
     if (numthreads > 1) {
       while (1) {
         setupgwork(pd);
-        for (int i = 0; i < numthreads; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
           gworkers[i].init(&pd, 0);
-        for (int i = 0; i < numthreads; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
           spawn_thread(i, dogodwork, gworkers + i);
-        for (int i = 0; i < numthreads; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
           join_thread(i);
         if (reader == levend)
           break;
@@ -1095,7 +1147,8 @@ void doarraygod(const puzdef &pd) {
 #endif
       for (loosetype *pr = reader; pr < levend; pr += looseper) {
         looseunpack(pd, p1, pr);
-        for (int i = 0; i < (int)pd.moves.size(); i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
           if (quarter && pd.moves[i].cost > 1)
             continue;
           pd.mul(p1, pd.moves[i].pos, p2);
@@ -1148,7 +1201,8 @@ void dorecurgod(const puzdef &pd, int togo, int sp, int st) {
   }
   ull mask = canonmask[st];
   const vector<int> &ns = canonnext[st];
-  for (int m = 0; m < (int)pd.moves.size(); m++) {
+  #pragma acc parallel loop
+for (int m = 0; m < (int)pd.moves.size(); m++) {
     const moove &mv = pd.moves[m];
     if ((mask >> mv.cs) & 1)
       continue;
@@ -1172,7 +1226,8 @@ void doarraygod2(const puzdef &pd) {
   s_2 = mem;
   movehist.clear();
   posns.clear();
-  for (int d = 0;; d++) {
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
     resetantipodes();
     while ((int)posns.size() <= d + 1) {
       posns.push_back(allocsetval(pd, pd.solved));
@@ -1261,25 +1316,30 @@ ull calcsymseen(const puzdef &pd, loosetype *p, ull cnt) {
   if (pd.invertible())
     rots *= 2;
   vector<int> rotmul(rots + 1);
-  for (int i = 1; i * i <= rots; i++)
+  #pragma acc parallel loop
+for (int i = 1; i * i <= rots; i++)
     if (rots % i == 0) {
       rotmul[i] = rots / i;
       rotmul[rots / i] = i;
     }
 #ifdef USE_PTHREADS
   if (numthreads > 1) {
-    for (int i = 0; i < numthreads; i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++) {
       ull me = cnt / (numthreads - i);
       csworkers[i].init(&pd, p, me, &rotmul);
       cnt -= me;
       p += me * looseper;
     }
-    for (int i = 0; i < numthreads; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
       spawn_thread(i, docswork, csworkers + i);
-    for (int i = 0; i < numthreads; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
       join_thread(i);
     ull r = 0;
-    for (int i = 0; i < numthreads; i++)
+    #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
       r += csworkers[i].tot;
     return r;
   } else {
@@ -1315,7 +1375,8 @@ void doarraygodsymm(const puzdef &pd) {
   int usesym = 1;
   if (pd.invertible())
     usesym++;
-  for (int d = 0;; d++) {
+  #pragma acc parallel loop
+for (int d = 0;; d++) {
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " scnt "
          << scnts[d] << " stot " << stot << " in " << duration() << endl
          << flush;
@@ -1327,11 +1388,14 @@ void doarraygodsymm(const puzdef &pd) {
     if (numthreads > 1) {
       while (1) {
         setupgwork(pd);
-        for (int i = 0; i < numthreads; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
           gworkers[i].init(&pd, usesym);
-        for (int i = 0; i < numthreads; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
           spawn_thread(i, dogodwork, gworkers + i);
-        for (int i = 0; i < numthreads; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < numthreads; i++)
           join_thread(i);
         if (reader == levend)
           break;
@@ -1341,8 +1405,10 @@ void doarraygodsymm(const puzdef &pd) {
 #endif
       for (loosetype *pr = reader; pr < levend; pr += looseper) {
         looseunpack(pd, p1, pr);
-        for (int doinv = 0; doinv < 2; doinv++) {
-          for (int i = 0; i < (int)pd.moves.size(); i++) {
+        #pragma acc parallel loop
+for (int doinv = 0; doinv < 2; doinv++) {
+          #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moves.size(); i++) {
             if (quarter && pd.moves[i].cost > 1)
               continue;
             pd.mul(p1, pd.moves[i].pos, p2);

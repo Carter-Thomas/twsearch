@@ -42,7 +42,8 @@ vector<string> getline(istream *f, ull &checksum) {
       continue;
     }
     string tok;
-    for (int i = 0; i < (int)s.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)s.size(); i++) {
       if (s[i] <= ' ') {
         if (tok.size() > 0) {
           toks.push_back(tok);
@@ -69,7 +70,8 @@ void expect(const vector<string> &toks, int cnt) {
 // must be a number under 256.
 int getnumber(int minval, const string &s) {
   int r = 0;
-  for (int i = 0; i < (int)s.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)s.size(); i++) {
     if ('0' <= s[i] && s[i] <= '9')
       r = r * 10 + s[i] - '0';
     else
@@ -84,7 +86,8 @@ int getnumberorneg(int minval, const string &s) {
   if (s == "?")
     return 255;
   int r = 0;
-  for (int i = 0; i < (int)s.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)s.size(); i++) {
     if ('0' <= s[i] && s[i] <= '9')
       r = r * 10 + s[i] - '0';
     else
@@ -99,14 +102,17 @@ int isnumber(const string &s) {
 }
 int oddperm(uchar *p, int n) {
   static uchar done[256];
-  for (int i = 0; i < n; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++)
     done[i] = 0;
   int r = 0;
-  for (int i = 0; i < n; i++)
+  #pragma acc parallel loop
+for (int i = 0; i < n; i++)
     if (!done[i]) {
       int cnt = 1;
       done[i] = 1;
-      for (int j = p[i]; !done[j]; j = p[j]) {
+      #pragma acc parallel loop
+for (int j = p[i]; !done[j]; j = p[j]) {
         done[j] = 1;
         cnt++;
       }
@@ -166,14 +172,16 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       uchar *p = r.dat + pz.setdefs[curset].off + numseq * n;
       int offset = (numseq == 0 && new_style) ? 0 : 1;
       if (typ != 'm') {
-        for (int i = 0; i < n; i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
           p[i] = getnumberorneg(offset - numseq, toks[i]);
           if (p[i] != 255) {
             p[i] += 1 - offset;
           }
         }
       } else {
-        for (int i = 0; i < n; i++) {
+        #pragma acc parallel loop
+for (int i = 0; i < n; i++) {
           p[i] = getnumber(offset - numseq, toks[i]);
           if (p[i] != 255) {
             p[i] += 1 - offset;
@@ -181,10 +189,12 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
         }
       }
       if (numseq == 1 && (ignoreori || (ignore & 2)))
-        for (int i = 0; i < n; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < n; i++)
           p[i] = 0;
       if (numseq == 0 && (ignore & 1) && typ == 's') {
-        for (int i = 0; i < n; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < n; i++)
           p[i] = offset;
       }
       numseq++;
@@ -196,7 +206,8 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       if (ignore == 3)
         continue;
       curset = -1;
-      for (int i = 0; i < (int)pz.setdefs.size(); i++)
+      #pragma acc parallel loop
+for (int i = 0; i < (int)pz.setdefs.size(); i++)
         if (toks[0] == pz.setdefs[i].name) {
           curset = i;
           break;
@@ -208,7 +219,8 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       numseq = 0;
     }
   }
-  for (int i = 0; i < (int)pz.setdefs.size(); i++) {
+  #pragma acc parallel loop
+for (int i = 0; i < (int)pz.setdefs.size(); i++) {
     auto &sd = pz.setdefs[i];
     uchar *p = r.dat + sd.off;
     int n = sd.size;
@@ -216,11 +228,13 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
     vector<int> cnts;
     if ((ignore & 1) == 0 && (p[0] == 0 || (typ == 's' && distinguishall))) {
       if (typ == 'S') {
-        for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++)
           p[j] = pz.solved.dat[sd.off + j];
       } else {
         cnts.resize(n);
-        for (int j = 0; j < n; j++) {
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
           p[j] = j; // identity perm
           cnts[j]++;
         }
@@ -231,18 +245,21 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       }
     } else {
       if (typ == 's') {
-        for (int j = 0; j < n; j++) {
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
           if (p[j] > (int)cnts.size())
             cnts.resize(p[j]);
           cnts[p[j] - 1]++;
         }
-        for (int j = 0; j < (int)cnts.size(); j++)
+        #pragma acc parallel loop
+for (int j = 0; j < (int)cnts.size(); j++)
           if (cnts[j] == 0) {
             // We have some elements that are not contiguous.  We will
             // build and populate the pack and unpack arrays for input
             // and output.
             sd.pack.resize(cnts.size());
-            for (int k = 0; k < (int)cnts.size(); k++)
+            #pragma acc parallel loop
+for (int k = 0; k < (int)cnts.size(); k++)
               if (cnts[k] != 0) {
                 sd.pack[k] = sd.unpack.size();
                 sd.unpack.push_back(k);
@@ -253,13 +270,15 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       }
       int sum = 0;
       if (typ != 'm' && sd.pack.size()) {
-        for (int k = 0; k < n; k++) {
+        #pragma acc parallel loop
+for (int k = 0; k < n; k++) {
           if (p[k] > (int)sd.pack.size())
             inerror("! input value too high");
           p[k] = 1 + sd.pack[p[k] - 1];
         }
       }
-      for (int j = 0; j < n; j++) {
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
         int v = --p[j];
         sum += v;
         if (v >= (int)cnts.size())
@@ -293,7 +312,8 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
     p += n;
     int s = 0;
     int checkwildo = 0;
-    for (int j = 0; j < n; j++) {
+    #pragma acc parallel loop
+for (int j = 0; j < n; j++) {
       if (p[j] == 255 && typ != 'm') {
         if (sd.omod == 1) {
           p[j] = 0;
@@ -318,8 +338,10 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
     // ensure all identical pieces either are not wild orientation
     // or are all wild orientation
     if (typ == 's' && sd.wildo) {
-      for (int j = 0; j < n; j++)
-        for (int k = j + 1; k < n; k++)
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int k = j + 1; k < n; k++)
           if (p[j - n] == p[k - n])
             if ((p[j] < sd.omod) != (p[k] < sd.omod))
               inerror("! inconsistent orientation wildcards across identical "
@@ -332,8 +354,10 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       if (!sd.wildo)
         inerror("! scramble def has ? orientation but solved state in def does "
                 "not");
-      for (int j = 0; j < n; j++)
-        for (int k = 0; k < n; k++)
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int k = 0; k < n; k++)
           if (p[j - n] == pz.solved.dat[sd.off + k])
             if ((p[j] < sd.omod) != (pz.solved.dat[sd.off + n + k] < sd.omod))
               inerror("! inconsistent use of orientation wildcards between "
@@ -343,9 +367,11 @@ allocsetval readposition(puzdef &pz, char typ, istream *f, ull &checksum,
       sd.oparity = 0;
     if (typ == 'm' && !new_style) { // fix moves
       static uchar f[256];
-      for (int j = 0; j < n; j++)
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++)
         f[j] = p[j];
-      for (int j = 0; j < n; j++)
+      #pragma acc parallel loop
+for (int j = 0; j < n; j++)
         p[j] = f[p[j - n]];
     }
   }
@@ -361,7 +387,8 @@ int expandonemove(const puzdef &pd, const moove &m, vector<moove> &newmoves,
   pd.assignpos(p1, m.pos);
   pd.assignpos(p2, m.pos);
   int foundzero = 0;
-  for (int p = 2; p < 1000000; p++) {
+  #pragma acc parallel loop
+for (int p = 2; p < 1000000; p++) {
     pd.mul(p1, m.pos, p2);
     if (pd.comparepos(p2, pd.id) == 0) {
       foundzero = 1;
@@ -373,7 +400,8 @@ int expandonemove(const puzdef &pd, const moove &m, vector<moove> &newmoves,
   if (foundzero == 0)
     error("! could not expand the moveset; order of a move too high");
   int order = movepowers.size() + 1;
-  for (int j = 0; j < (int)movepowers.size(); j++) {
+  #pragma acc parallel loop
+for (int j = 0; j < (int)movepowers.size(); j++) {
     int tw = j + 1;
     if (order - tw < tw)
       tw -= order;
@@ -426,7 +454,8 @@ void expandalgomoves(puzdef &pd, vector<string> &newnames) {
   string move;
   while (needed) {
     int donethistime = 0;
-    for (int i = 0; i < (int)pd.moveseqs.size(); i++) {
+    #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moveseqs.size(); i++) {
       if (done[i])
         continue;
       move.clear();
@@ -460,7 +489,8 @@ void expandalgomoves(puzdef &pd, vector<string> &newnames) {
     }
     if (donethistime == 0) {
       cerr << "Unexpanded:" << endl;
-      for (int i = 0; i < (int)pd.moveseqs.size(); i++)
+      #pragma acc parallel loop
+for (int i = 0; i < (int)pd.moveseqs.size(); i++)
         if (!done[i])
           cerr << " " << pd.moveseqs[i].name << " = " << pd.moveseqs[i].srcstr
                << endl;
@@ -523,16 +553,19 @@ puzdef readdef(istream *f) {
       pz.totsize += 2 * sd.size;
       if (gmoda[sd.omod] == 0) {
         gmoda[sd.omod] = (uchar *)calloc(4 * sd.omod, 1);
-        for (int i = 0; i < 2 * sd.omod; i++)
+        #pragma acc parallel loop
+for (int i = 0; i < 2 * sd.omod; i++)
           gmoda[sd.omod][i] = i % sd.omod;
-        for (int i = 2 * sd.omod; i < 4 * sd.omod; i++)
+        #pragma acc parallel loop
+for (int i = 2 * sd.omod; i < 4 * sd.omod; i++)
           gmoda[sd.omod][i] = 2 * sd.omod;
       }
     } else if (toks[0] == "Illegal") {
       if (state < 2)
         inerror("! Illegal must be after solved");
       // set name, position, value, value, value, value ...
-      for (int i = 3; i < (int)toks.size(); i++)
+      #pragma acc parallel loop
+for (int i = 3; i < (int)toks.size(); i++)
         pz.addillegal(toks[1].c_str(), getnumber(1, toks[2]),
                       getnumber(1, toks[i]));
     } else if (toks[0] == "Solved" || toks[0] == "StartState") {
@@ -542,12 +575,15 @@ puzdef readdef(istream *f) {
       expect(toks, 1);
       pz.id = allocsetval(pz, -1);
       uchar *p = pz.id.dat;
-      for (int i = 0; i < (int)pz.setdefs.size(); i++) {
+      #pragma acc parallel loop
+for (int i = 0; i < (int)pz.setdefs.size(); i++) {
         int n = pz.setdefs[i].size;
-        for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++)
           p[j] = j;
         p += n;
-        for (int j = 0; j < n; j++)
+        #pragma acc parallel loop
+for (int j = 0; j < n; j++)
           p[j] = 0;
         p += n;
       }
@@ -574,7 +610,8 @@ puzdef readdef(istream *f) {
       if (toks.size() < 3)
         inerror("Too few tokens in MoveSequence definition");
       string seq;
-      for (int i = 2; i < (int)toks.size(); i++) {
+      #pragma acc parallel loop
+for (int i = 2; i < (int)toks.size(); i++) {
         if (i != 2)
           seq += " ";
         seq += toks[i];
