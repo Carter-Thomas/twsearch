@@ -114,7 +114,7 @@ int microthread::getwork(const puzdef &pd, prunetable &pt) {
   }
 }
 
-// GPU-accelerated solve iteration with OpenACC
+// Solve iteration - complex control flow, keep on CPU
 int solveworker::solveiter(const puzdef &pd, prunetable &pt, const setval p) {
   int active = 0;
   
@@ -129,50 +129,43 @@ int solveworker::solveiter(const puzdef &pd, prunetable &pt, const setval p) {
     }
   }
   
-  // GPU acceleration for parallel microthread processing
-  #pragma acc data copyin(pd, pt) copy(active)
-  {
-    for (ll checkcnt = 0; active; checkcnt++) {
-      int uid = rover++;
-      if (rover >= workinguthreading)
-        rover = 0;
-      
-      if (uthr[uid].finished)
+  // Main solve loop - keep on CPU due to complex control flow
+  for (ll checkcnt = 0; active; checkcnt++) {
+    int uid = rover++;
+    if (rover >= workinguthreading)
+      rover = 0;
+    
+    if (uthr[uid].finished)
+      continue;
+    
+    int v = uthr[uid].innerfetch(pd, pt);
+    if (v <= 0) {
+      if (uthr[uid].getwork(pd, pt)) {
+        uthr[uid].lookups++;
+        uthr[uid].extraprobes += uthr[uid].invflag;
+        v = 3;
+      } else {
+        active--;
         continue;
-      
-      #pragma acc kernels present(pd, pt)
-      {
-        int v = uthr[uid].innerfetch(pd, pt);
-        if (v <= 0) {
-          #pragma acc update host(v)
-          if (uthr[uid].getwork(pd, pt)) {
-            uthr[uid].lookups++;
-            uthr[uid].extraprobes += uthr[uid].invflag;
-            v = 3;
-          } else {
-            active--;
-            continue;
-          }
-        }
-        if (v != 3)
-          return v;
       }
-      
-      if (checkcnt > checktarget) {
-        int finished = 0;
-        get_global_lock();
-        finished = satisfiedsolutioncount();
-        checkincrement += checkincrement / 100;
-        checktarget = checkcnt + checkincrement;
-        release_global_lock();
-        if (finished)
-          return 0;
-      }
-      
-      uthr[uid].innersetup(pt);
-      uthr[uid].lookups++;
-      uthr[uid].extraprobes += uthr[uid].invflag;
     }
+    if (v != 3)
+      return v;
+    
+    if (checkcnt > checktarget) {
+      int finished = 0;
+      get_global_lock();
+      finished = satisfiedsolutioncount();
+      checkincrement += checkincrement / 100;
+      checktarget = checkcnt + checkincrement;
+      release_global_lock();
+      if (finished)
+        return 0;
+    }
+    
+    uthr[uid].innersetup(pt);
+    uthr[uid].lookups++;
+    uthr[uid].extraprobes += uthr[uid].invflag;
   }
   return 0;
 }
@@ -184,7 +177,7 @@ void microthread::innersetup(prunetable &pt) {
     h = pt.prefetchindexed(pt.gethashforlookup(posns[sp], looktmp));
 }
 
-// GPU-accelerated inner fetch with OpenACC
+// Inner fetch - complex control flow with gotos, keep on CPU
 int microthread::innerfetch(const puzdef &pd, prunetable &pt) {
   int v = pt.lookuphindexed(h);
   int m, mi;
@@ -232,7 +225,7 @@ upstack:
       if (pd.moves[m].base < 64)
         skipbase |= 1LL << pd.moves[m].base;
     } else {
-      skipbase = -1;
+      skipbase = 0xffffffffffffffffULL;
     }
   }
   
@@ -249,11 +242,8 @@ downstack:
   if ((mask >> mv.cs) & 1)
     goto downstack;
   
-  // GPU acceleration for move multiplication
-  #pragma acc kernels present(pd)
-  {
-    pd.mul(posns[sp], mv.pos, posns[sp + 1]);
-  }
+  // Simple move multiplication - keep on CPU due to context
+  pd.mul(posns[sp], mv.pos, posns[sp + 1]);
   
   if (!pd.legalstate(posns[sp + 1]))
     goto downstack;
@@ -274,8 +264,7 @@ int microthread::solvestart(const puzdef &pd, prunetable &pt, int w) {
   togo = d;
   invflag = 0;
   
-  // GPU acceleration for initial move sequence
-  #pragma acc parallel loop present(pd)
+  // Sequential initialization (cannot parallelize due to dependencies)
   while (initmoves > 1) {
     int mv = initmoves % nmoves;
     pd.mul(posns[sp], pd.moves[mv].pos, posns[sp + 1]);
@@ -295,7 +284,7 @@ int microthread::solvestart(const puzdef &pd, prunetable &pt, int w) {
 
 int maxdepth = 1000000000;
 
-// Main solve function with GPU acceleration
+// Main solve function
 int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
   solutionsfound = solutionsneeded;
   if (gs && !gs->resolve(p)) {
@@ -314,9 +303,6 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
   randomized.clear();
   ull lastlookups = 0;
   ull lastextra = 0;
-  
-  // Initialize GPU
-  #pragma acc init
   
   for (int d = initd; d <= maxdepth; d++) {
     lastlookups = totlookups;
@@ -353,22 +339,12 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
     for (int t = 0; t < wthreads; t++)
       solveworkers[t].init(d, t, p);
     
-    // GPU parallel region for worker threads
-    #pragma acc parallel num_gangs(wthreads) present(pd, pt)
-    {
-      #pragma acc loop gang
-      for (int i = 0; i < wthreads; i++) {
-        if (i == 0) {
-          threadworker((void *)&workerparams[0]);
-        }
-        #ifdef USE_PTHREADS
-        else {
-          spawn_thread(i, threadworker, &(workerparams[i]));
-        }
-        #endif
-      }
-    }
-    
+    // Use CPU threads (pthreads) for worker threads
+    #ifdef USE_PTHREADS
+    for (int i = 1; i < wthreads; i++)
+      spawn_thread(i, threadworker, &(workerparams[i]));
+    #endif
+    threadworker((void *)&workerparams[0]);
     #ifdef USE_PTHREADS
     for (int i = 1; i < wthreads; i++)
       join_thread(i);
@@ -405,7 +381,6 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
              << (totlookups / actualtime / 1e6) << endl
              << flush;
       }
-      #pragma acc shutdown
       return d;
     }
     
@@ -432,8 +407,6 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
     if (d != maxdepth && (alloptimal == 0 || solutionsfound == 0))
       pt.checkextend(pd);
   }
-  
-  #pragma acc shutdown
   
   if (!phase2 && callback == 0)
     cout << "No solution found in " << hid << endl << flush;
