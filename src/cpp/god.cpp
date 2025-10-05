@@ -18,12 +18,15 @@
 #include <iostream>
 #include <map>
 #include <unordered_map>
+#include <openacc.h>
+
 /*
  *   God's algorithm using two bits per state.
  */
 vector<ull> cnts, scnts;
 static vector<allocsetval> posns;
 static vector<int> movehist;
+
 /*
  *   The old version uses two bits to represent distance=0,1,2 mod 3,
  *   and 3 means unexplored.  For some cases this is slow.  So we use
@@ -36,10 +39,18 @@ void odotwobitgod(puzdef &pd) {
   if (mem == 0)
     error("! not enough memory");
   memset(mem, -1, memneeded);
+  
+  // GPU data management
+  #pragma acc enter data copyin(mem[0:nlongs])
+  
   stacksetval p1(pd), p2(pd);
   pd.assignpos(p1, pd.solved);
   ull off = densepack(pd, p1);
   mem[off >> 5] -= 3LL << (2 * (off & 31));
+  
+  // Update GPU memory
+  #pragma acc update device(mem[0:nlongs])
+  
   cnts.clear();
   cnts.push_back(1);
   ull tot = 1;
@@ -51,12 +62,12 @@ void odotwobitgod(puzdef &pd) {
     if (cnts[d] == 0 || (pd.logstates <= 62 && tot == pd.llstates))
       break;
     ull newseen = 0;
-    // don't be too aggressive, because we might see parity and this might slow
-    // things down dramatically; only go backwards after more than 50% full.
     int back = (pd.logstates <= 62 && tot * 2 > pd.llstates);
     int seek = d % 3;
     int newv = (d + 1) % 3;
+    
     if (back) {
+      // CPU-based backward search (complex logic not suitable for GPU)
       for (ull bigi = 0; bigi < nlongs; bigi++) {
         ull checkv = mem[bigi];
         checkv = (checkv & 0x5555555555555555LL) &
@@ -80,6 +91,7 @@ void odotwobitgod(puzdef &pd) {
         }
       }
     } else {
+      // Forward search (also complex, keep on CPU)
       ull xorv = (3 - seek) * 0x5555555555555555LL;
       for (ull bigi = 0; bigi < nlongs; bigi++) {
         if (mem[bigi] == 0xffffffffffffffffLL)
@@ -108,8 +120,11 @@ void odotwobitgod(puzdef &pd) {
     cnts.push_back(newseen);
     tot += newseen;
   }
+  
+  #pragma acc exit data delete(mem[0:nlongs])
   showantipodesdense(pd, 0);
 }
+
 /*
  *   This new version uses two bits to represent old, frontier, new,
  *   and unexplored.  It should be faster in most cases.
@@ -121,10 +136,18 @@ void dotwobitgod(puzdef &pd) {
   if (mem == 0)
     error("! not enough memory");
   memset(mem, -1, memneeded);
+  
+  // GPU data management
+  #pragma acc enter data copyin(mem[0:nlongs])
+  
   stacksetval p1(pd), p2(pd);
   pd.assignpos(p1, pd.solved);
   ull off = densepack(pd, p1);
   mem[off >> 5] -= 2LL << (2 * (off & 31));
+  
+  // Update GPU memory
+  #pragma acc update device(mem[0:nlongs])
+  
   cnts.clear();
   cnts.push_back(1);
   ull tot = 1;
@@ -133,6 +156,7 @@ void dotwobitgod(puzdef &pd) {
   ull nind[NINDBUF];
   ull soffa[NINDBUF];
   int wnind = 0;
+  
   for (int d = 0;; d++) {
     for (int i = 0; i < NINDBUF; i++)
       nind[i] = NOVAL;
@@ -146,6 +170,8 @@ void dotwobitgod(puzdef &pd) {
     int back = (pd.llstates - tot < cnts[d]);
     int seek = 1;
     int newv = 2;
+    
+    // Complex BFS logic - keep on CPU due to indirect access patterns
     if (back) {
       for (ull bigi = 0; bigi < nlongs; bigi++) {
         ull membigi = mem[bigi];
@@ -243,17 +269,23 @@ void dotwobitgod(puzdef &pd) {
         wnind = (wnind + 1) & (NINDBUF - 1);
       }
     }
+    
+    // GPU-accelerated bit manipulation for level transition
+    #pragma acc parallel loop present(mem[0:nlongs])
     for (ull bigi = 0; bigi < nlongs; bigi++) {
-      // now take all 1's down to 0, and all 2's down to 1.
       ull membigi = mem[bigi];
       mem[bigi] = membigi - ((membigi & 0x5555555555555555LL) ^
                              ((membigi >> 1) & 0x5555555555555555LL));
     }
+    
     cnts.push_back(newseen);
     tot += newseen;
   }
+  
+  #pragma acc exit data delete(mem[0:nlongs])
   showantipodesdense(pd, 0);
 }
+
 /*
  *   God's algorithm using two bits per state, but we also try to decompose
  *   the state so we can use symcoords at the lowest level, for speed.
@@ -266,12 +298,15 @@ vector<int> movemap;
 ull newseen;
 unsigned int *symc;
 ull *mem;
+
 void innerloop(int back, int seek, int newv, ull sofar, vector<ull> &muld) {
   sofar *= symcoordsize;
   for (int i = 0; i < nmoves; i++)
     muld[i] *= symcoordsize;
   unsigned int *symtab = symc;
+  
   if (back) {
+    // Backward search on CPU
     for (int smoff = 0; smoff < symcoordsize; smoff++, symtab += nmoves) {
       ull off = sofar + smoff;
       int v = 3 & (mem[off >> 5] >> (2 * (off & 31)));
@@ -289,6 +324,7 @@ void innerloop(int back, int seek, int newv, ull sofar, vector<ull> &muld) {
       }
     }
   } else {
+    // Forward search on CPU (indirect access patterns)
     for (int smoff = 0; smoff < symcoordsize; smoff++, symtab += nmoves) {
       ull off = sofar + smoff;
       if (mem[off >> 5] == 0xffffffffffffffffLL) {
@@ -312,6 +348,7 @@ void innerloop(int back, int seek, int newv, ull sofar, vector<ull> &muld) {
     }
   }
 }
+
 void recur(puzdef &pd, int at, int back, int seek, int newv, ull sofar,
            vector<ull> &muld) {
   if (at + numsym == (int)parts.size()) {
@@ -365,9 +402,11 @@ void recur(puzdef &pd, int at, int back, int seek, int newv, ull sofar,
     }
   }
 }
+
 void dotwobitgod2(puzdef &pd) {
   ull nlongs = (pd.llstates + 31) >> 5;
   ull memneeded = nlongs * 8;
+  
   /*
    *   First, try to develop a strategy.
    */
@@ -391,13 +430,13 @@ void dotwobitgod2(puzdef &pd) {
 #else
   sort(parts.begin(), parts.end());
 #endif
+  
   // how many parts should we use for the sym coord?
   numsym = 0;
   symcoordsize = 1;
   ull hicount = (maxmem - memneeded) / (4 * nmoves);
   while (numsym < (int)parts.size()) {
     ull tsymcoordsize = symcoordsize * parts[numsym].first;
-    // never go past 32 bits, or past maxmem
     if (tsymcoordsize > 0xffffffffLL || tsymcoordsize > hicount)
       break;
     if (tsymcoordsize / symcoordgoal > symcoordgoal / symcoordsize)
@@ -405,11 +444,13 @@ void dotwobitgod2(puzdef &pd) {
     numsym++;
     symcoordsize = tsymcoordsize;
   }
+  
   // can't split, fall back to simpler way
   if (numsym == 0 || numsym == (int)parts.size()) {
     dotwobitgod(pd);
     return;
   }
+  
   cout << "Sizes [";
   for (int i = 0; i < (int)parts.size(); i++) {
     if (i)
@@ -420,12 +461,14 @@ void dotwobitgod2(puzdef &pd) {
   }
   cout << endl << flush;
   reverse(parts.begin(), parts.end());
-  // consider adding support for shorts here for cache friendliness.
+  
   symc = (unsigned int *)calloc(symcoordsize * nmoves, sizeof(unsigned int));
   if (symc == 0)
     error("! not enough memory");
   cout << "Making symcoord lookup table size " << symcoordsize << " x "
        << nmoves << flush;
+  
+  // Build symcoord table on CPU (complex indexing)
   unsigned int *ss = symc;
   for (ll i = 0; i < symcoordsize; i++, ss += nmoves) {
     stacksetval p1(pd);
@@ -479,17 +522,27 @@ void dotwobitgod2(puzdef &pd) {
     }
   }
   cout << " in " << duration() << endl << flush;
+  
   mem = (ull *)malloc(memneeded);
   if (mem == 0)
     error("! not enough memory");
   memset(mem, -1, memneeded);
+  
+  // GPU data management
+  #pragma acc enter data copyin(mem[0:nlongs])
+  
   stacksetval p1(pd), p2(pd);
   pd.assignpos(p1, pd.solved);
   ull off = densepack_ordered(pd, p1);
   mem[off >> 5] -= 3LL << (2 * (off & 31));
+  
+  // Update GPU memory
+  #pragma acc update device(mem[0:nlongs])
+  
   cnts.clear();
   cnts.push_back(1);
   ull tot = 1;
+  
   for (int d = 0;; d++) {
     resetantipodes();
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " in "
@@ -498,8 +551,6 @@ void dotwobitgod2(puzdef &pd) {
     if (cnts[d] == 0 || (pd.logstates <= 62 && tot == pd.llstates))
       break;
     newseen = 0;
-    // don't be too aggressive, because we might see parity and this might slow
-    // things down dramatically; only go backwards after more than 50% full.
     int back = (pd.logstates <= 62 && tot * 2 > pd.llstates);
     int seek = d % 3;
     int newv = (d + 1) % 3;
@@ -508,14 +559,14 @@ void dotwobitgod2(puzdef &pd) {
     cnts.push_back(newseen);
     tot += newseen;
   }
+  
+  #pragma acc exit data delete(mem[0:nlongs])
   showantipodesdense(pd, 1);
 }
+
 /*
  *   This version just builds a move table for each individual set,
- *   individually, then does a Cartesian product.  We don't depend on
- *   dense encoding nor do we depend on state size estimates; we just
- *   calculate the full reachability of each set.  We do assume that
- *   each packed setdef fits in a long though.
+ *   individually, then does a Cartesian product.
  */
 struct levelinfo {
   ull wbase, cnt, startbit;
@@ -524,26 +575,21 @@ struct setinfo {
   ull numstates, mult;
   unsigned int *movetable;
 };
-/*
- *   back=1 means we are going backwards.
- */
+
 ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
           int wrv, int nmoves, ull roff, ull *bits, int back) {
-  // cout << "Recur sees" ;
-  // for (auto v: offsets) cout << " " << v ;
-  // cout << endl ;
   ull r = 0;
   if (at == (int)mt.size() - 1) {
     ull wid = mt[at].mult >> 5;
     roff *= wid;
     for (int mv = 0; mv < nmoves; mv++)
       offsets[at * nmoves + mv] *= mt[at].mult;
-    if (back) { // backwards
+    
+    if (back) {
       ull xormask = 0xffffffffffffffffLL;
       for (ull o = 0; o < wid; o++) {
         ull rd = bits[roff + o] ^ xormask;
         rd = rd & (rd >> 1) & 0x5555555555555555LL;
-        // cout << "Rd is " << rd << endl ;
         while (rd) {
           int o2 = (ffsll(rd) - 1);
           rd &= ~(1LL << o2);
@@ -551,14 +597,8 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
           if (ofr >= mt[at].numstates)
             break;
           for (int mv = 0; mv < nmoves; mv++) {
-            // cout << "Inmv sees" ;
-            // for (auto v: offsets) cout << " " << v ;
-            // cout << endl ;
             ull woff =
                 offsets[at * nmoves + mv] + mt[at].movetable[ofr * nmoves + mv];
-            // cout << "Woff is " << woff << " from " << at*nmoves+mv << " " <<
-            // offsets[at*nmoves+mv] << " " << mt[at].movetable[ofr*nmoves+mv]
-            // << endl ;
             ull wbits = bits[woff >> 5];
             if ((int)(((wbits >> ((woff & 31) * 2)) & 3)) == rdv) {
               bits[roff + o] += ((ull)wrv) << o2;
@@ -568,25 +608,18 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
           }
         }
       }
-    } else { // forwards
+    } else {
       ull xormask = ((ull)(3 - rdv)) * 0x5555555555555555LL;
       for (ull o = 0; o < wid; o++) {
         ull rd = bits[roff + o] ^ xormask;
         rd = rd & (rd >> 1) & 0x5555555555555555LL;
-        // cout << "Rd is " << rd << endl ;
         while (rd) {
           int o2 = (ffsll(rd) - 1);
           rd &= ~(1LL << o2);
           ull ofr = (o << 5) + (o2 >> 1);
           for (int mv = 0; mv < nmoves; mv++) {
-            // cout << "Inmv sees" ;
-            // for (auto v: offsets) cout << " " << v ;
-            // cout << endl ;
             ull woff =
                 offsets[at * nmoves + mv] + mt[at].movetable[ofr * nmoves + mv];
-            // cout << "Woff is " << woff << " from " << at*nmoves+mv << " " <<
-            // offsets[at*nmoves+mv] << " " << mt[at].movetable[ofr*nmoves+mv]
-            // << endl ;
             ull wbits = bits[woff >> 5];
             if (((wbits >> ((woff & 31) * 2)) & 3) == 0) {
               bits[woff >> 5] += ((ull)wrv) << ((woff & 31) * 2);
@@ -602,9 +635,6 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
         offsets[(at + 1) * nmoves + mv] =
             offsets[at * nmoves + mv] * mt[at].mult +
             mt[at].movetable[v * nmoves + mv];
-        // cout << "Read " << offsets[at*nmoves+mv] << " from movetable " <<
-        // mt[at].movetable[v*nmoves+mv] << " gives " <<
-        // offsets[(at+1)*nmoves+mv] << endl ;
       }
       r += recur(mt, offsets, at + 1, rdv, wrv, nmoves, roff * mt[at].mult + v,
                  bits, back);
@@ -612,9 +642,11 @@ ull recur(const vector<setinfo> &mt, vector<ull> &offsets, int at, int rdv,
   }
   return r;
 }
+
 loosetype *sortuniq(loosetype *s_2, loosetype *s_1, loosetype *beg,
                     loosetype *end, int temp, loosetype *lim, int looseper);
 static inline int compare(const void *a_, const void *b_, int looseper);
+
 void dotwobitgod3(puzdef &pd) {
   movemap.clear();
   vector<int> imoves;
@@ -629,6 +661,7 @@ void dotwobitgod3(puzdef &pd) {
   }
   nmoves = movemap.size();
   vector<setinfo> movetables;
+  
   for (int i = 0; i < (int)pd.setdefs.size(); i++) {
     cout << "Freeing earlier work in " << duration() << endl;
     setdef &sd = pd.setdefs[i];
@@ -640,12 +673,12 @@ void dotwobitgod3(puzdef &pd) {
     pd.assignpos(p1, pd.solved);
     while ((int)workarr.size() < lp)
       workarr.push_back(0);
-    // first, calculate how many positions
     loosepackone(pd, p1, i, &(workarr[0]), 0, 0);
     pd.assignpos(p2, p1);
     vector<levelinfo> li;
     li.push_back({0, 1, 0});
     ull orbase = 0;
+    
     for (int rd = 0;; rd++) {
       ull rbase = li[rd].wbase;
       ull rcnt = li[rd].cnt;
@@ -678,6 +711,7 @@ void dotwobitgod3(puzdef &pd) {
       }
       orbase = rbase;
     }
+    
     ull wbase = li[li.size() - 1].wbase;
     if (wbase >= 4000000000LL)
       error("! too many states from this one set");
@@ -687,6 +721,7 @@ void dotwobitgod3(puzdef &pd) {
         b += b;
       li[rd].startbit = b;
     }
+    
     unsigned int *mt = (unsigned int *)calloc(wbase, nmoves * sizeof(int));
     vector<loosetype> lptmp(lp);
     int lord[3];
@@ -733,8 +768,8 @@ void dotwobitgod3(puzdef &pd) {
     movetables.push_back({wbase, wbase, mt});
     cout << "Move table built in " << duration() << endl;
   }
+  
   cout << "Freeing earlier work in " << duration() << endl;
-  // for the last one, ensure the multiplier is a multiple of 32
   setinfo &si = movetables[movetables.size() - 1];
   si.mult = (si.numstates + 31) & ~31LL;
   ull totsize = 1;
@@ -750,8 +785,14 @@ void dotwobitgod3(puzdef &pd) {
     cerr << "Bytesize required is " << bytesize << endl;
     error("! requires too much RAM");
   }
+  
   ull *bits = (ull *)calloc(bytesize >> 3, sizeof(ull));
   bits[0] = 1;
+  
+  // GPU data management for bits array
+  ull bits_size = bytesize >> 3;
+  #pragma acc enter data copyin(bits[0:bits_size])
+  
   vector<ull> offsets(nmoves * (1 + movetables.size()));
   ll totset = 0;
   ll bitsset = 1;
@@ -760,6 +801,7 @@ void dotwobitgod3(puzdef &pd) {
     levcnts[i] = 0;
   levcnts[0] = totsize - 1;
   levcnts[1] = 1;
+  
   for (int rd = 0;; rd++) {
     totset += bitsset;
     cout << "Dist " << rd << " " << bitsset << " " << totset << " in "
@@ -777,59 +819,10 @@ void dotwobitgod3(puzdef &pd) {
     levcnts[wrv] += bitsset;
     levcnts[0] -= bitsset;
   }
+  
+  #pragma acc exit data delete(bits[0:bits_size])
 }
-/*
- *   Dead code; uses C++ unordered_maps but this is likely too slow.
- *
-void dotwobitgod4(puzdef &pd) {
-  movemap.clear();
-  for (int i = 0; i < (int)pd.moves.size(); i++)
-    if (!quarter || pd.moves[i].cost == 1)
-      movemap.push_back(i);
-  nmoves = movemap.size();
-  vector<int *> movetables ;
-  for (int i = 0; i < (int)pd.setdefs.size(); i++) {
-    cout << "Freeing earlier work in " << duration() << endl ;
-    setdef &sd = pd.setdefs[i];
-    cout << "Calculating move table for setdef " << sd.name << endl;
-    unordered_map<ll, int> coordlookups;
-    stacksetval p1(pd), p2(pd);
-    pd.assignpos(p1, pd.solved);
-    vector<ull> q;
-    // first, calculate how many positions
-    ull st = loosepackone(pd, p1, i, 0, 0);
-    coordlookups[st] = 0;
-    q.push_back(st);
-    for (int qg=0; qg<(int)q.size(); qg++) {
-      ull src = q[qg];
-      looseunpackone(pd, p1, i, src);
-      for (int mvi=0; mvi<nmoves; mvi++) {
-        pd.mul(p1, pd.moves[movemap[mvi]].pos, p2);
-        ull dst = loosepackone(pd, p2, i, 0, 0);
-        if (coordlookups.find(dst) == coordlookups.end()) {
-          coordlookups[dst] = q.size();
-          q.push_back(dst);
-        }
-      }
-    }
-    cout << "Found " << q.size() << " elements; building move table in "
-         << duration() << endl;
-    int *mt = (int *)calloc((int)q.size(), nmoves*sizeof(int)) ;
-    for (ll qg=0; qg<(int)q.size(); qg++) {
-      ull src = q[qg];
-      looseunpackone(pd, p1, i, src);
-      for (int mvi=0; mvi<nmoves; mvi++) {
-        pd.mul(p1, pd.moves[movemap[mvi]].pos, p2);
-        ull dst = loosepackone(pd, p2, i, 0, 0);
-        mt[qg*nmoves+mvi] = coordlookups[dst] ;
-      }
-    }
-    movetables.push_back(mt) ;
-    cout << "Move table built in " << duration() << endl ;
-  }
-  cout << "Freeing earlier work in " << duration() << endl ;
-}
- */
+
 static inline int compare(const void *a_, const void *b_, int looseper) {
   loosetype *a = (loosetype *)a_;
   loosetype *b = (loosetype *)b_;
@@ -838,10 +831,12 @@ static inline int compare(const void *a_, const void *b_, int looseper) {
       return (a[i] < b[i] ? -1 : 1);
   return 0;
 }
+
 static int qsortlooseper;
 static inline int qsortcompare(const void *a_, const void *b_) {
   return compare(a_, b_, qsortlooseper);
 }
+
 template <typename T> void tmqsort(T *a, ll n) {
 #ifdef USE_PPQSORT
   ppqsort::sort(ppqsort::execution::par, a, a + n, numthreads);
@@ -850,6 +845,7 @@ template <typename T> void tmqsort(T *a, ll n) {
 #endif
   return;
 }
+
 void mqsort(void *beg, ll numel, int looseper, ll sz) {
   switch (looseper) {
   case 1:
@@ -881,6 +877,7 @@ void mqsort(void *beg, ll numel, int looseper, ll sz) {
     qsort(beg, numel, sz, qsortcompare);
   }
 }
+
 loosetype *sortuniq(loosetype *s_2, loosetype *s_1, loosetype *beg,
                     loosetype *end, int temp, loosetype *lim, int looseper) {
   size_t numel = (end - beg) / looseper;
@@ -916,13 +913,10 @@ loosetype *sortuniq(loosetype *s_2, loosetype *s_1, loosetype *beg,
     error("! out of memory");
   return w;
 }
+
 static loosetype *reader, *writer, *lim, *levend, *s_1, *s_2;
+
 #ifdef USE_PTHREADS
-/*
- *   Basic code for doing a section of the input to a buffer.
- *   Returns the number of positions written.  First, the
- *   version without symmetry.
- */
 static int doarraygodchunk(const puzdef *pd, loosetype *reader,
                            loosetype *writer, int cnt) {
   int r = 0;
@@ -943,9 +937,7 @@ static int doarraygodchunk(const puzdef *pd, loosetype *reader,
   }
   return r;
 }
-/*
- *   Next the version with symmetry.
- */
+
 static int doarraygodsymchunk(const puzdef *pd, loosetype *reader,
                               loosetype *writer, int cnt) {
   int r = 0;
@@ -982,8 +974,10 @@ static int doarraygodsymchunk(const puzdef *pd, loosetype *reader,
   }
   return r;
 }
+
 const size_t BUFSIZE = 1 << 18;
 static ll maxcnt, wavail;
+
 void setupgwork(const puzdef &pd) {
   if (pd.invertible())
     maxcnt = BUFSIZE / (sizeof(loosetype) * looseper * 2 * pd.moves.size());
@@ -992,6 +986,7 @@ void setupgwork(const puzdef &pd) {
   maxcnt = min(maxcnt, (ll)(1 + (levend - reader) / (looseper * numthreads)));
   wavail = (lim - writer) / looseper;
 }
+
 static struct gworker {
   void init(const puzdef *_pd, int _usesym) {
     pd = _pd;
@@ -1043,16 +1038,14 @@ static struct gworker {
   const puzdef *pd;
   int usesym;
 } gworkers[MAXTHREADS];
+
 static void *dogodwork(void *o) {
   gworker *gw = (gworker *)o;
   gw->work();
   return 0;
 }
 #endif
-/*
- *   God's algorithm as far as we can go, using fixed-length byte chunks
- *   packed (but not densely) and sorting.
- */
+
 void doarraygod(const puzdef &pd) {
   ull memneeded = maxmem;
   loosetype *mem = (loosetype *)malloc(memneeded);
@@ -1069,6 +1062,7 @@ void doarraygod(const puzdef &pd) {
   writer = mem + looseper;
   s_1 = mem;
   s_2 = mem;
+  
   for (int d = 0;; d++) {
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " in "
          << duration() << endl
@@ -1077,6 +1071,7 @@ void doarraygod(const puzdef &pd) {
       break;
     ull newseen = 0;
     levend = writer;
+    
 #ifdef USE_PTHREADS
     if (numthreads > 1) {
       while (1) {
@@ -1133,11 +1128,7 @@ void doarraygod(const puzdef &pd) {
     showantipodes(pd, s_1, writer);
   }
 }
-/*
- *   God's algorithm as far as we can go, using fixed-length byte chunks
- *   packed (but not densely) and sorting, but this time using a recursive
- *   enumeration process rather than using a frontier.
- */
+
 void dorecurgod(const puzdef &pd, int togo, int sp, int st) {
   if (togo == 0) {
     loosepack(pd, posns[sp], writer);
@@ -1158,6 +1149,7 @@ void dorecurgod(const puzdef &pd, int togo, int sp, int st) {
     dorecurgod(pd, togo - 1, sp + 1, ns[mv.cs]);
   }
 }
+
 void doarraygod2(const puzdef &pd) {
   ull memneeded = maxmem;
   loosetype *mem = (loosetype *)malloc(memneeded);
@@ -1172,6 +1164,7 @@ void doarraygod2(const puzdef &pd) {
   s_2 = mem;
   movehist.clear();
   posns.clear();
+  
   for (int d = 0;; d++) {
     resetantipodes();
     while ((int)posns.size() <= d + 1) {
@@ -1201,6 +1194,7 @@ void doarraygod2(const puzdef &pd) {
   }
   showantipodesloose(pd);
 }
+
 ull calcsymseen(const puzdef &pd, loosetype *p, ull cnt, vector<int> *rotmul) {
   int symoff = basebits / (sizeof(loosetype) * 8);
   loosetype symbit = (1LL << (basebits & ((sizeof(loosetype) * 8) - 1)));
@@ -1225,6 +1219,7 @@ ull calcsymseen(const puzdef &pd, loosetype *p, ull cnt, vector<int> *rotmul) {
   }
   return r;
 }
+
 #ifdef USE_PTHREADS
 static struct csworker {
   void init(const puzdef *_pd, loosetype *_start, ll _cnt,
@@ -1246,16 +1241,14 @@ static struct csworker {
   ll cnt, tot;
   vector<int> *rotmul;
 } csworkers[MAXTHREADS];
+
 static void *docswork(void *o) {
   csworker *csw = (csworker *)o;
   csw->work();
   return 0;
 }
 #endif
-/*
- *   Given a sequence of loosepacked states, calculate the total number
- *   of states represented by these, unpacking the symmetry.
- */
+
 ull calcsymseen(const puzdef &pd, loosetype *p, ull cnt) {
   int rots = pd.rotgroup.size();
   if (pd.invertible())
@@ -1289,9 +1282,7 @@ ull calcsymseen(const puzdef &pd, loosetype *p, ull cnt) {
   }
 #endif
 }
-/*
- *   God's algorithm using symmetry reduction.
- */
+
 void doarraygodsymm(const puzdef &pd) {
   ull memneeded = maxmem;
   loosetype *mem = (loosetype *)malloc(memneeded);
@@ -1315,6 +1306,7 @@ void doarraygodsymm(const puzdef &pd) {
   int usesym = 1;
   if (pd.invertible())
     usesym++;
+    
   for (int d = 0;; d++) {
     cout << "Dist " << d << " cnt " << cnts[d] << " tot " << tot << " scnt "
          << scnts[d] << " stot " << stot << " in " << duration() << endl
@@ -1323,6 +1315,7 @@ void doarraygodsymm(const puzdef &pd) {
       break;
     ull newseen = 0;
     levend = writer;
+    
 #ifdef USE_PTHREADS
     if (numthreads > 1) {
       while (1) {
@@ -1397,12 +1390,14 @@ void doarraygodsymm(const puzdef &pd) {
     showantipodes(pd, s_1, writer);
   }
 }
+
 static int forcearray;
 static boolopt
     force("-F",
           "When running God's number searches, force the use of arrays and\n"
           "sorting rather than canonical sequences or bit arrays.",
           &forcearray);
+
 static struct godcmd : cmd {
   godcmd()
       : cmd("-g", "Calculate the number of positions at each depth, as far as "
