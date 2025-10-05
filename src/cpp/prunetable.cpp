@@ -73,7 +73,7 @@ void fillworker::init(const puzdef &pd, int d_) {
   wfillcnt = 0;
 }
 
-// GPU-accelerated fillstart with OpenACC
+// Optimized fillstart without nested parallelism
 ull fillworker::fillstart(const puzdef &pd, prunetable &pt, int w) {
   ull initmoves = pt.workchunks[w];
   int nmoves = pd.moves.size();
@@ -81,21 +81,16 @@ ull fillworker::fillstart(const puzdef &pd, prunetable &pt, int w) {
   int st = 0;
   int togo = d;
   
-  #pragma acc data copyin(pd, pt)
-  {
-    while (initmoves > 1) {
-      int mv = initmoves % nmoves;
-      #pragma acc kernels present(pd)
-      {
-        pd.mul(posns[sp], pd.moves[mv].pos, posns[sp + 1]);
-      }
-      if (!pd.legalstate(posns[sp + 1]))
-        return 0;
-      st = canonnext[st][pd.moves[mv].cs];
-      sp++;
-      togo--;
-      initmoves /= nmoves;
-    }
+  // Sequential initialization phase (cannot parallelize easily)
+  while (initmoves > 1) {
+    int mv = initmoves % nmoves;
+    pd.mul(posns[sp], pd.moves[mv].pos, posns[sp + 1]);
+    if (!pd.legalstate(posns[sp + 1]))
+      return 0;
+    st = canonnext[st][pd.moves[mv].cs];
+    sp++;
+    togo--;
+    initmoves /= nmoves;
   }
   
   ull r = filltable(pd, pt, togo, sp, st);
@@ -114,15 +109,13 @@ ull fillworker::fillflush(prunetable &pt, int shard) {
     
     wfillcnt += fb.nchunks;
     
-    // GPU acceleration for memory updates
-    #pragma acc parallel loop present(pt.mem) reduction(+:r)
+    // Process chunks sequentially - GPU acceleration here is not effective
+    // due to small chunk sizes and synchronization requirements
     for (int i = 0; i < fb.nchunks; i++) {
       ull h = fb.chunks[i];
       if (((pt.mem[h >> 5] >> (2 * (h & 31))) & 3) == 0) {
-        #pragma acc atomic update
         pt.mem[h >> 5] += (3LL - pt.wval) << (2 * (h & 31));
         if ((pt.mem[(h >> 5) & -8] & 15) == 0) {
-          #pragma acc atomic update
           pt.mem[(h >> 5) & -8] += 1 + pt.wbval;
         }
         r++;
@@ -138,26 +131,23 @@ ull fillworker::fillflush(prunetable &pt, int shard) {
 }
 
 void fillworker::dowork(const puzdef &pd, prunetable &pt) {
-  #pragma acc data copyin(pd, pt)
-  {
-    while (1) {
-      int w = -1;
-      get_global_lock();
-      if (pt.workat < (int)pt.workchunks.size())
-        w = pt.workat++;
-      release_global_lock();
-      if (w < 0)
-        return;
-      
-      ull cnt = fillstart(pd, pt, w);
-      get_global_lock();
-      pt.popped += cnt;
-      release_global_lock();
-    }
+  while (1) {
+    int w = -1;
+    get_global_lock();
+    if (pt.workat < (int)pt.workchunks.size())
+      w = pt.workat++;
+    release_global_lock();
+    if (w < 0)
+      return;
+    
+    ull cnt = fillstart(pd, pt, w);
+    get_global_lock();
+    pt.popped += cnt;
+    release_global_lock();
   }
 }
 
-// GPU-accelerated filltable with OpenACC
+// Optimized filltable - recursive function, no GPU parallelization
 ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
                           int st) {
   ull r = 0;
@@ -180,17 +170,13 @@ ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
   ull mask = canonmask[st];
   const vector<int> &ns = canonnext[st];
   
-  // GPU parallel loop for move generation
-  #pragma acc parallel loop present(pd) reduction(+:r)
+  // Recursive calls - cannot be parallelized with OpenACC effectively
   for (int m = 0; m < (int)pd.moves.size(); m++) {
     const moove &mv = pd.moves[m];
     if ((mask >> mv.cs) & 1)
       continue;
     
-    #pragma acc kernels
-    {
-      pd.mul(posns[sp], mv.pos, posns[sp + 1]);
-    }
+    pd.mul(posns[sp], mv.pos, posns[sp + 1]);
     
     if (!pd.legalstate(posns[sp + 1]))
       continue;
@@ -199,7 +185,7 @@ ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
   return r;
 }
 
-// GPU-accelerated pruning table initialization
+// Pruning table initialization with GPU memory management
 prunetable::prunetable(const puzdef &pd, ull maxmem) {
   pdp = &pd;
   totsize = pd.totsize;
@@ -245,9 +231,6 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   cout << "Trying to allocate "
        << (CACHELINESIZE + (bytesize >> 3) * sizeof(ull)) << endl;
   
-  // Allocate unified memory for GPU access
-  #pragma acc enter data create(this[0:1])
-  
   amem = mem = (ull *)calloc(CACHELINESIZE + (bytesize >> 3) * sizeof(ull), 1);
   if (mem == 0)
     error("! could not allocate main memory buffer");
@@ -255,8 +238,9 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   while (((ull)mem) & (CACHELINESIZE - 1))
     mem++;
   
-  // Copy memory to GPU
-  #pragma acc enter data copyin(mem[0:(bytesize>>3)])
+  // Create GPU data region for memory array
+  ull memsize = (bytesize >> 3);
+  #pragma acc enter data copyin(mem[0:memsize])
   
   lookupcnt = 0;
   fillcnt = 0;
@@ -270,9 +254,6 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
       cout << "Initializing memory in " << duration() << endl << flush;
     baseval = 1;
     
-    // Initialize GPU
-    #pragma acc init
-    
     filltable(pd, 0);
     filltable(pd, 1);
     filltable(pd, 2);
@@ -285,7 +266,7 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   }
 }
 
-// GPU-accelerated filltable
+// Standard filltable without nested parallelism
 void prunetable::filltable(const puzdef &pd, int d) {
   popped = 0;
   wbval = min(d, 14);
@@ -300,26 +281,16 @@ void prunetable::filltable(const puzdef &pd, int d) {
   for (int t = 0; t < wthreads; t++)
     fillworkers[t].init(pd, d);
   
-  // GPU parallel region for worker threads
-  #pragma acc parallel num_gangs(wthreads)
-  {
-    #pragma acc loop gang
-    for (int i = 0; i < wthreads; i++) {
-      #ifdef USE_PTHREADS
-      if (i == 0) {
-        fillthreadworker((void *)&workerparams[0]);
-      } else {
-        spawn_thread(i, fillthreadworker, &(workerparams[i]));
-      }
-      #else
-      fillthreadworker((void *)&workerparams[i]);
-      #endif
-    }
-  }
-  
+  // Use CPU threads (pthreads) instead of nested GPU parallelism
   #ifdef USE_PTHREADS
   for (int i = 1; i < wthreads; i++)
+    spawn_thread(i, fillthreadworker, &(workerparams[i]));
+  fillthreadworker((void *)&workerparams[0]);
+  for (int i = 1; i < wthreads; i++)
     join_thread(i);
+  #else
+  for (int i = 0; i < wthreads; i++)
+    fillthreadworker((void *)&workerparams[i]);
   #endif
   
   for (int i = 0; i < wthreads; i++)
@@ -338,7 +309,7 @@ void prunetable::filltable(const puzdef &pd, int d) {
   justread = 0;
 }
 
-// GPU-accelerated checkextend
+// GPU-accelerated checkextend with proper parallel region
 void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
   double prediction = 0;
   if (ptotpop != 0)
@@ -352,8 +323,8 @@ void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
     if (quiet == 0)
       cout << "Demoting memory values " << flush;
     
-    // GPU parallel demotion
-    #pragma acc parallel loop present(mem)
+    // Single parallel region for GPU demotion
+    #pragma acc parallel loop present(mem[0:longcnt])
     for (ull i = 0; i < longcnt; i += 8) {
       ull v = mem[i];
       mem[i] = v + ((v ^ (v >> 1)) & 0x5555555555555550LL);
@@ -386,6 +357,3 @@ void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
   filltable(pd, baseval + 1);
   writept(pd);
 }
-
-// Rest of the prunetable implementation remains similar with strategic OpenACC directives
-// for parallel regions and data management...
