@@ -185,6 +185,98 @@ ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
   return r;
 }
 
+void ioqueue::initin(struct prunetable *pt_, istream *f_) {
+  pt = pt_;
+  inf = f_;
+  outf = 0;
+  for (int i = 0; i < numthreads; i++)
+    ioworkitems[i].state = 0;
+  nextthread = 0;
+}
+
+void ioqueue::initout(struct prunetable *pt_, ostream *f_) {
+  pt = pt_;
+  inf = 0;
+  outf = f_;
+  for (int i = 0; i < numthreads; i++)
+    ioworkitems[i].state = 0;
+  nextthread = 0;
+}
+
+void ioqueue::waitthread(int i) {
+#ifdef USE_PTHREADS
+  join_thread(i);
+#endif
+  if (ioworkitems[i].state == 2) {
+    unsigned int bytecnt = ioworkitems[i].bytecnt;
+    unsigned int longcnt = ioworkitems[i].longcnt;
+    outf->put(bytecnt & 255);
+    outf->put((bytecnt >> 8) & 255);
+    outf->put((bytecnt >> 16) & 255);
+    outf->put((bytecnt >> 24) & 255);
+    outf->put(longcnt & 255);
+    outf->put((longcnt >> 8) & 255);
+    outf->put((longcnt >> 16) & 255);
+    outf->put((longcnt >> 24) & 255);
+    outf->write((char *)ioworkitems[i].buf, bytecnt);
+    if (outf->fail())
+      error("! I/O error writing block");
+    free(ioworkitems[i].buf);
+  }
+}
+
+void ioqueue::queuepackwork(ull *mem, ull longcnt, uchar *buf,
+                            unsigned int bytecnt) {
+  if (ioworkitems[nextthread].state != 0) {
+    waitthread(nextthread);
+    ioworkitems[nextthread].state = 0;
+  }
+  ioworkitems[nextthread].mem = mem;
+  ioworkitems[nextthread].longcnt = longcnt;
+  ioworkitems[nextthread].buf = buf;
+  ioworkitems[nextthread].bytecnt = bytecnt;
+  ioworkitems[nextthread].pt = pt;
+  ioworkitems[nextthread].state = 2;
+#ifdef USE_PTHREADS
+  spawn_thread(nextthread, packworker, &ioworkitems[nextthread]);
+#else
+  packworker(&ioworkitems[nextthread]);
+#endif
+  nextthread++;
+  if (nextthread >= numthreads)
+    nextthread = 0;
+}
+
+void ioqueue::queueunpackwork(ull *mem, ull longcnt, uchar *buf,
+                              unsigned int bytecnt) {
+  if (ioworkitems[nextthread].state != 0) {
+    waitthread(nextthread);
+    ioworkitems[nextthread].state = 0;
+  }
+  ioworkitems[nextthread].mem = mem;
+  ioworkitems[nextthread].longcnt = longcnt;
+  ioworkitems[nextthread].buf = buf;
+  ioworkitems[nextthread].bytecnt = bytecnt;
+  ioworkitems[nextthread].pt = pt;
+  ioworkitems[nextthread].state = 1;
+#ifdef USE_PTHREADS
+  spawn_thread(nextthread, unpackworker, &ioworkitems[nextthread]);
+#else
+  unpackworker(&ioworkitems[nextthread]);
+#endif
+  nextthread++;
+  if (nextthread >= numthreads)
+    nextthread = 0;
+}
+
+void ioqueue::finishall() {
+  for (int i = 0; i < numthreads; i++) {
+    if (ioworkitems[nextthread].state != 0)
+      waitthread(nextthread);
+    nextthread = (nextthread + 1) % numthreads;
+  }
+}
+
 // Pruning table initialization with GPU memory management
 prunetable::prunetable(const puzdef &pd, ull maxmem) {
   pdp = &pd;
