@@ -1,5 +1,5 @@
 # --- Compiler setup for OpenACC ---
-CXX      ?= pgc++
+CXX := pgc++
 CXXFLAGS ?= -O3 -std=c++20 -acc -Minfo=accel \
             -Warray-bounds -Wextra -Wall -pedantic -g -Wsign-compare
 FLAGS     = -DTWSEARCH_VERSION=${TWSEARCH_VERSION} -DUSE_PTHREADS -DUSE_PPQSORT
