@@ -1,4 +1,4 @@
-CXX       ?= nvc++
+CXX       ?= pgc++
 CXXFLAGS  ?= -O2 -std=c++17 -acc -Minfo=accel
 LDFLAGS   ?=
 
