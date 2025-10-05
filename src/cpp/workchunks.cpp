@@ -10,7 +10,7 @@ int randomstart;
 static vector<allocsetval> seen;
 static int lastsize;
 
-// GPU-accelerated work chunk generation
+// Work chunk generation - complex logic best kept on CPU
 vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
                            int microthreadcount) {
   vector<int> workstates;
@@ -34,96 +34,76 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
     vector<int> hashprev;
     int seensize = 0;
     
-    // Initialize GPU
-    #pragma acc init
-    
     while (chunkmoves + 3 < d && (int)workchunks.size() < 40 * mythreads) {
       vector<ull> wc2;
       vector<int> ws2;
       
       if (pd.rotgroup.size() > 1) {
-        // GPU-accelerated rotation group processing
-        #pragma acc data copyin(pd, workchunks[0:workchunks.size()], workstates[0:workstates.size()])
-        {
-          for (int i = 0; i < (int)workchunks.size(); i++) {
-            ull pmv = workchunks[i];
-            int st = workstates[i];
-            ull mask = canonmask[st];
-            ull t = pmv;
-            pd.assignpos(p1, symmreduce);
+        // Rotation group processing - keep on CPU due to complex state management
+        for (int i = 0; i < (int)workchunks.size(); i++) {
+          ull pmv = workchunks[i];
+          int st = workstates[i];
+          ull mask = canonmask[st];
+          ull t = pmv;
+          pd.assignpos(p1, symmreduce);
+          
+          // Apply initial moves
+          while (t > 1) {
+            domove(pd, p1, t % nmoves);
+            t /= nmoves;
+          }
+          
+          // Move generation with hash table lookups
+          for (int mv = 0; mv < nmoves; mv++) {
+            if (quarter && pd.moves[mv].cost > 1)
+              continue;
+            if ((mask >> pd.moves[mv].cs) & 1)
+              continue;
             
-            // Apply initial moves
-            while (t > 1) {
-              domove(pd, p1, t % nmoves);
-              t /= nmoves;
+            pd.mul(p1, pd.moves[mv].pos, p2);
+            if (!pd.legalstate(p2))
+              continue;
+            
+            slowmodm2(pd, p2, p3);
+            int h = fasthash(pd.totsize, p3) % hashmod;
+            int isnew = 1;
+            
+            // Check hash table for duplicates
+            for (int j = hashfront[h]; j >= 0; j = hashprev[j]) {
+              if (pd.comparepos(p3, seen[j]) == 0) {
+                isnew = 0;
+                break;
+              }
             }
             
-            // GPU parallel move generation
-            #pragma acc parallel loop present(pd)
-            for (int mv = 0; mv < nmoves; mv++) {
-              if (quarter && pd.moves[mv].cost > 1)
-                continue;
-              if ((mask >> pd.moves[mv].cs) & 1)
-                continue;
+            if (isnew) {
+              wc2.push_back(pmv + (nmoves + mv - 1) * mul);
+              ws2.push_back(canonnext[st][pd.moves[mv].cs]);
               
-              pd.mul(p1, pd.moves[mv].pos, p2);
-              if (!pd.legalstate(p2))
-                continue;
-              
-              slowmodm2(pd, p2, p3);
-              int h = fasthash(pd.totsize, p3) % hashmod;
-              int isnew = 1;
-              
-              #pragma acc atomic capture
-              {
-                for (int j = hashfront[h]; j >= 0; j = hashprev[j]) {
-                  if (pd.comparepos(p3, seen[j]) == 0) {
-                    isnew = 0;
-                    break;
-                  }
-                }
+              if (seensize < (int)seen.size()) {
+                pd.assignpos(seen[seensize], p3);
+              } else {
+                seen.push_back(allocsetval(pd, p3));
               }
               
-              if (isnew) {
-                #pragma acc critical
-                {
-                  wc2.push_back(pmv + (nmoves + mv - 1) * mul);
-                  ws2.push_back(canonnext[st][pd.moves[mv].cs]);
-                  
-                  if (seensize < (int)seen.size()) {
-                    pd.assignpos(seen[seensize], p3);
-                  } else {
-                    seen.push_back(allocsetval(pd, p3));
-                  }
-                  
-                  hashprev.push_back(hashfront[h]);
-                  hashfront[h] = seensize;
-                  seensize++;
-                }
-              }
+              hashprev.push_back(hashfront[h]);
+              hashfront[h] = seensize;
+              seensize++;
             }
           }
         }
       } else {
-        // Non-rotation group processing with GPU acceleration
-        #pragma acc data copyin(pd, workchunks[0:workchunks.size()], workstates[0:workstates.size()])
-        {
-          #pragma acc parallel loop
-          for (int i = 0; i < (int)workchunks.size(); i++) {
-            ull pmv = workchunks[i];
-            int st = workstates[i];
-            ull mask = canonmask[st];
-            const vector<int> &ns = canonnext[st];
-            
-            #pragma acc loop seq
-            for (int mv = 0; mv < nmoves; mv++) {
-              if (0 == ((mask >> pd.moves[mv].cs) & 1)) {
-                #pragma acc critical
-                {
-                  wc2.push_back(pmv + (nmoves + mv - 1) * mul);
-                  ws2.push_back(ns[pd.moves[mv].cs]);
-                }
-              }
+        // Non-rotation group processing - simple case
+        for (int i = 0; i < (int)workchunks.size(); i++) {
+          ull pmv = workchunks[i];
+          int st = workstates[i];
+          ull mask = canonmask[st];
+          const vector<int> &ns = canonnext[st];
+          
+          for (int mv = 0; mv < nmoves; mv++) {
+            if (0 == ((mask >> pd.moves[mv].cs) & 1)) {
+              wc2.push_back(pmv + (nmoves + mv - 1) * mul);
+              ws2.push_back(ns[pd.moves[mv].cs]);
             }
           }
         }
@@ -140,20 +120,14 @@ vector<ull> makeworkchunks(const puzdef &pd, int d, setval symmreduce,
       }
     }
     
-    // Randomize if needed
+    // Randomize if needed - simple shuffle on CPU
     if (randomstart) {
-      #pragma acc parallel loop
       for (int i = 0; i < (int)workchunks.size(); i++) {
         int j = i + myrand(workchunks.size() - i);
-        #pragma acc atomic capture
-        {
-          swap(workchunks[i], workchunks[j]);
-          swap(workstates[i], workstates[j]);
-        }
+        swap(workchunks[i], workchunks[j]);
+        swap(workstates[i], workstates[j]);
       }
     }
-    
-    #pragma acc shutdown
   }
   
   return workchunks;
