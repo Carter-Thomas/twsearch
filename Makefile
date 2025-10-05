@@ -1,6 +1,14 @@
+CXX       ?= nvc++
+CXXFLAGS  ?= -O2 -std=c++17 -acc -Minfo=accel
+LDFLAGS   ?=
+
+# Directories
+BUILD_DIR = build
+BIN_DIR   = $(BUILD_DIR)/bin
+
 .PHONY: build
 build: \
-	build/bin/twsearch \
+	$(BIN_DIR)/twsearch \
 	twsearch-cpp-wrapper-cli \
 	build-rust \
 	build-rust-wasm \
@@ -55,6 +63,7 @@ describe-version:
 	@ make setup-js 2>&1 > /dev/null
 	@ bun x -- @lgarron-bin/repo version describe
 
+# --- includes ---
 include ./Makefiles/cpp.Makefile
 include ./Makefiles/js.Makefile
 include ./Makefiles/rust.Makefile
