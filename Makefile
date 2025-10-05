@@ -1,5 +1,5 @@
-CXX       ?= pgc++
-CXXFLAGS  ?= -O2 -std=c++17 -acc -Minfo=accel
+CXX := pgc++
+CXXFLAGS  ?= -O2 -std=c++20 -acc -Minfo=accel
 LDFLAGS   ?=
 
 # Directories
