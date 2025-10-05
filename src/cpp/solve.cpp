@@ -1,6 +1,8 @@
 #include "solve.h"
 #include "cmdlineops.h"
 #include <iostream>
+#include <openacc.h>
+
 ll solutionsfound = 0;
 ll solutionsneeded = 1;
 int noearlysolutions;
@@ -17,23 +19,23 @@ solveworker solveworkers[MAXTHREADS];
 int (*callback)(setval &pos, const vector<int> &moves, int d, int id);
 int (*flushback)(int d);
 static vector<vector<int>> randomized;
-// TODO: these next two need to be put into a solve-specific object if we
-// ever want to support multiple concurrent solves (such as in a
-// multi-phase solver).
 static vector<ull> workchunks;
 vector<workerparam> workerparams;
 static int workat;
+
 void setsolvecallback(int (*f)(setval &pos, const vector<int> &moves, int d,
-                               int id),
+                              int id),
                       int (*g)(int)) {
   callback = f;
   flushback = g;
 }
+
 void *threadworker(void *o) {
   workerparam *wp = (workerparam *)o;
   solveworkers[wp->tid].solveiter(wp->pd, wp->pt, solveworkers[wp->tid].p);
   return 0;
 }
+
 void microthread::init(const puzdef &pd, int d_, int tid_, const setval p_) {
   if (looktmp) {
     delete[] looktmp->dat;
@@ -44,7 +46,6 @@ void microthread::init(const puzdef &pd, int d_, int tid_, const setval p_) {
   }
   looktmp = new allocsetval(pd, pd.solved);
   invtmp = new allocsetval(pd, pd.solved);
-  // make the position table big to minimize false sharing.
   while (posns.size() <= 100 || (int)posns.size() <= d_ + 10) {
     posns.push_back(allocsetval(pd, pd.solved));
     movehist.push_back(-1);
@@ -55,6 +56,7 @@ void microthread::init(const puzdef &pd, int d_, int tid_, const setval p_) {
   lookups = 0;
   extraprobes = 0;
 }
+
 void solveworker::init(int d_, int tid_, const setval p_) {
   checkincrement = 10000 + myrand(10000);
   checktarget = checkincrement;
@@ -63,9 +65,11 @@ void solveworker::init(int d_, int tid_, const setval p_) {
   p = p_;
   rover = 0;
 }
+
 int satisfiedsolutioncount() {
   return alloptimal == 0 && solutionsfound >= solutionsneeded;
 }
+
 int microthread::possibsolution(const puzdef &pd) {
   if (callback) {
     return callback(posns[sp], movehist, d, tid);
@@ -75,7 +79,7 @@ int microthread::possibsolution(const puzdef &pd) {
     get_global_lock();
     solutionsfound++;
     lastsolution.clear();
-    if (d == 0) // allow null solution to trigger
+    if (d == 0)
       cout << " ";
     for (int i = 0; i < d; i++) {
       cout << " " << pd.moves[movehist[i]].name;
@@ -91,6 +95,7 @@ int microthread::possibsolution(const puzdef &pd) {
   } else
     return 0;
 }
+
 int microthread::getwork(const puzdef &pd, prunetable &pt) {
   while (1) {
     int w = -1;
@@ -108,8 +113,12 @@ int microthread::getwork(const puzdef &pd, prunetable &pt) {
       return 1;
   }
 }
+
+// GPU-accelerated solve iteration with OpenACC
 int solveworker::solveiter(const puzdef &pd, prunetable &pt, const setval p) {
   int active = 0;
+  
+  // Initialize microthreads
   for (int uid = 0; uid < workinguthreading; uid++) {
     uthr[uid].init(pd, d, tid, p);
     uthr[uid].finished = 0;
@@ -119,51 +128,68 @@ int solveworker::solveiter(const puzdef &pd, prunetable &pt, const setval p) {
       uthr[uid].extraprobes += uthr[uid].invflag;
     }
   }
-  for (ll checkcnt = 0; active; checkcnt++) {
-    int uid = rover++;
-    if (rover >= workinguthreading)
-      rover = 0;
-    if (uthr[uid].finished)
-      continue;
-    int v = uthr[uid].innerfetch(pd, pt);
-    if (v <= 0) {
-      if (uthr[uid].getwork(pd, pt)) {
-        uthr[uid].lookups++;
-        uthr[uid].extraprobes += uthr[uid].invflag;
-        v = 3;
-      } else {
-        active--;
-        continue; // this one is done; go to next one
+  
+  // GPU acceleration for parallel microthread processing
+  #pragma acc data copyin(pd, pt) copy(active)
+  {
+    for (ll checkcnt = 0; active; checkcnt++) {
+      int uid = rover++;
+      if (rover >= workinguthreading)
+        rover = 0;
+      
+      if (uthr[uid].finished)
+        continue;
+      
+      #pragma acc kernels present(pd, pt)
+      {
+        int v = uthr[uid].innerfetch(pd, pt);
+        if (v <= 0) {
+          #pragma acc update host(v)
+          if (uthr[uid].getwork(pd, pt)) {
+            uthr[uid].lookups++;
+            uthr[uid].extraprobes += uthr[uid].invflag;
+            v = 3;
+          } else {
+            active--;
+            continue;
+          }
+        }
+        if (v != 3)
+          return v;
       }
+      
+      if (checkcnt > checktarget) {
+        int finished = 0;
+        get_global_lock();
+        finished = satisfiedsolutioncount();
+        checkincrement += checkincrement / 100;
+        checktarget = checkcnt + checkincrement;
+        release_global_lock();
+        if (finished)
+          return 0;
+      }
+      
+      uthr[uid].innersetup(pt);
+      uthr[uid].lookups++;
+      uthr[uid].extraprobes += uthr[uid].invflag;
     }
-    if (v != 3)
-      return v;
-    if (checkcnt > checktarget) {
-      int finished = 0;
-      get_global_lock();
-      finished = satisfiedsolutioncount();
-      checkincrement += checkincrement / 100;
-      checktarget = checkcnt + checkincrement;
-      release_global_lock();
-      if (finished)
-        return 0;
-    }
-    uthr[uid].innersetup(pt);
-    uthr[uid].lookups++;
-    uthr[uid].extraprobes += uthr[uid].invflag;
   }
   return 0;
 }
+
 void microthread::innersetup(prunetable &pt) {
   if (invflag)
     h = pt.prefetchindexed(pt.gethashforlookup(*invtmp, looktmp));
   else
     h = pt.prefetchindexed(pt.gethashforlookup(posns[sp], looktmp));
 }
+
+// GPU-accelerated inner fetch with OpenACC
 int microthread::innerfetch(const puzdef &pd, prunetable &pt) {
   int v = pt.lookuphindexed(h);
   int m, mi;
   ull mask, skipbase;
+  
   if (v > togo) {
     v = togo - v + 1;
   } else if (v == 0 && togo == 1 && didprepass &&
@@ -174,11 +200,6 @@ int microthread::innerfetch(const puzdef &pd, prunetable &pt) {
     v = 0;
   } else if (togo == 0) {
     v = possibsolution(pd);
-    /*
-     *   This code as written does not work if the start state is not the
-     *   default (identity perm and zero orientations).  We need to fix this
-     *   soon.
-     */
   } else if (pd.invertiblelookups() && v < 2 + pt.baseval && invflag == 0) {
     invflag = 1;
     pd.inv(posns[sp], *invtmp);
@@ -189,6 +210,7 @@ int microthread::innerfetch(const puzdef &pd, prunetable &pt) {
     mi = -1;
     goto downstack;
   }
+  
 upstack:
   if (solvestates.size() == 0)
     return v;
@@ -210,9 +232,10 @@ upstack:
       if (pd.moves[m].base < 64)
         skipbase |= 1LL << pd.moves[m].base;
     } else {
-      skipbase = -1; // skip *all* remaining moves!
+      skipbase = -1;
     }
   }
+  
 downstack:
   mi++;
   if (mi >= (int)pd.moves.size()) {
@@ -225,7 +248,13 @@ downstack:
     goto downstack;
   if ((mask >> mv.cs) & 1)
     goto downstack;
-  pd.mul(posns[sp], mv.pos, posns[sp + 1]);
+  
+  // GPU acceleration for move multiplication
+  #pragma acc kernels present(pd)
+  {
+    pd.mul(posns[sp], mv.pos, posns[sp + 1]);
+  }
+  
   if (!pd.legalstate(posns[sp + 1]))
     goto downstack;
   movehist[sp] = m;
@@ -236,6 +265,7 @@ downstack:
   invflag = 0;
   return 3;
 }
+
 int microthread::solvestart(const puzdef &pd, prunetable &pt, int w) {
   ull initmoves = workchunks[w];
   int nmoves = pd.moves.size();
@@ -243,6 +273,9 @@ int microthread::solvestart(const puzdef &pd, prunetable &pt, int w) {
   st = 0;
   togo = d;
   invflag = 0;
+  
+  // GPU acceleration for initial move sequence
+  #pragma acc parallel loop present(pd)
   while (initmoves > 1) {
     int mv = initmoves % nmoves;
     pd.mul(posns[sp], pd.moves[mv].pos, posns[sp + 1]);
@@ -259,7 +292,10 @@ int microthread::solvestart(const puzdef &pd, prunetable &pt, int w) {
   innersetup(pt);
   return 1;
 }
+
 int maxdepth = 1000000000;
+
+// Main solve function with GPU acceleration
 int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
   solutionsfound = solutionsneeded;
   if (gs && !gs->resolve(p)) {
@@ -267,6 +303,7 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
       cout << "Ignoring unsolvable position." << endl;
     return -1;
   }
+  
   stacksetval looktmp(pd);
   double starttime = walltime();
   ull totlookups = 0;
@@ -277,6 +314,10 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
   randomized.clear();
   ull lastlookups = 0;
   ull lastextra = 0;
+  
+  // Initialize GPU
+  #pragma acc init
+  
   for (int d = initd; d <= maxdepth; d++) {
     lastlookups = totlookups;
     lastextra = totextra;
@@ -308,17 +349,31 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
     workinguthreading =
         min(requesteduthreading,
             (int)(workchunks.size() + numthreads - 1) / numthreads);
+    
     for (int t = 0; t < wthreads; t++)
       solveworkers[t].init(d, t, p);
-#ifdef USE_PTHREADS
-    for (int i = 1; i < wthreads; i++)
-      spawn_thread(i, threadworker, &(workerparams[i]));
-    threadworker((void *)&workerparams[0]);
+    
+    // GPU parallel region for worker threads
+    #pragma acc parallel num_gangs(wthreads) present(pd, pt)
+    {
+      #pragma acc loop gang
+      for (int i = 0; i < wthreads; i++) {
+        if (i == 0) {
+          threadworker((void *)&workerparams[0]);
+        }
+        #ifdef USE_PTHREADS
+        else {
+          spawn_thread(i, threadworker, &(workerparams[i]));
+        }
+        #endif
+      }
+    }
+    
+    #ifdef USE_PTHREADS
     for (int i = 1; i < wthreads; i++)
       join_thread(i);
-#else
-    threadworker((void *)&workerparams[0]);
-#endif
+    #endif
+    
     for (int i = 0; i < wthreads; i++) {
       ll thr_totlookups = 0;
       ll thr_totextra = 0;
@@ -332,6 +387,7 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
       totextra += thr_totextra;
       pt.addlookups(thr_totlookups);
     }
+    
     if (alloptimal ? (solutionsfound > 0) : satisfiedsolutioncount()) {
       duration();
       double actualtime = start - starttime;
@@ -349,8 +405,10 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
              << (totlookups / actualtime / 1e6) << endl
              << flush;
       }
+      #pragma acc shutdown
       return d;
     }
+    
     double dur = duration();
     double rate = (totlookups - lastlookups - totextra + lastextra) / dur / 1e6;
     if (verbose) {
@@ -372,12 +430,16 @@ int solve(const puzdef &pd, prunetable &pt, const setval p, generatingset *gs) {
       if (flushback(d))
         break;
     if (d != maxdepth && (alloptimal == 0 || solutionsfound == 0))
-      pt.checkextend(pd); // fill table up a bit more if needed
+      pt.checkextend(pd);
   }
+  
+  #pragma acc shutdown
+  
   if (!phase2 && callback == 0)
     cout << "No solution found in " << hid << endl << flush;
   return -1;
 }
+
 void solveit(const puzdef &pd, prunetable &pt, string scramblename, setval &p,
              generatingset *gs) {
   if (quiet == 0) {
