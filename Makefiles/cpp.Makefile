@@ -1,14 +1,15 @@
-# This uses a pattern to cache a lazy evaluation: https://make.mad-scientist.net/deferred-simple-variable-expansion/
+# --- Compiler setup for OpenACC ---
+CXX      ?= nvc++
+CXXFLAGS ?= -O3 -std=c++20 -acc -Minfo=accel \
+            -Warray-bounds -Wextra -Wall -pedantic -g -Wsign-compare
+FLAGS     = -DTWSEARCH_VERSION=${TWSEARCH_VERSION} -DUSE_PTHREADS -DUSE_PPQSORT
+LDFLAGS   = -lpthread
+
+# Cache lazy evaluation of version
 TWSEARCH_VERSION = $(eval TWSEARCH_VERSION := $$(shell make --no-print-directory describe-version))$(TWSEARCH_VERSION)
 
 .PHONY: build-cpp
 build-cpp: build/bin/twsearch
-
-# MAKEFLAGS += -j
-# CXXFLAGS = -fsanitize=address -fsanitize=undefined -O3 -Warray-bounds -Wextra -Wall -pedantic -std=c++20 -g -Wsign-compare
-CXXFLAGS = -O3 -Warray-bounds -Wextra -Wall -pedantic -std=c++20 -g -Wsign-compare
-FLAGS = -DTWSEARCH_VERSION=${TWSEARCH_VERSION} -DUSE_PTHREADS -DUSE_PPQSORT
-LDFLAGS = -lpthread
 
 # TODO: why does this always trigger rebuilds when using as a target dependency?
 CPP_MAKEFILE = Makefile/cpp.Makefile
