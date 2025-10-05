@@ -73,15 +73,12 @@ void fillworker::init(const puzdef &pd, int d_) {
   wfillcnt = 0;
 }
 
-// Optimized fillstart without nested parallelism
 ull fillworker::fillstart(const puzdef &pd, prunetable &pt, int w) {
   ull initmoves = pt.workchunks[w];
   int nmoves = pd.moves.size();
   int sp = 0;
   int st = 0;
   int togo = d;
-  
-  // Sequential initialization phase (cannot parallelize easily)
   while (initmoves > 1) {
     int mv = initmoves % nmoves;
     pd.mul(posns[sp], pd.moves[mv].pos, posns[sp + 1]);
@@ -92,7 +89,6 @@ ull fillworker::fillstart(const puzdef &pd, prunetable &pt, int w) {
     togo--;
     initmoves /= nmoves;
   }
-  
   ull r = filltable(pd, pt, togo, sp, st);
   for (int i = 0; i < MEMSHARDS; i++)
     r += fillflush(pt, i);
@@ -103,28 +99,22 @@ ull fillworker::fillflush(prunetable &pt, int shard) {
   ull r = 0;
   fillbuf &fb = fillbufs[shard];
   if (fb.nchunks > 0) {
-    #ifdef USE_PTHREADS
+#ifdef USE_PTHREADS
     pthread_mutex_lock(&(memshards[shard].mutex));
-    #endif
-    
+#endif
     wfillcnt += fb.nchunks;
-    
-    // Process chunks sequentially - GPU acceleration here is not effective
-    // due to small chunk sizes and synchronization requirements
     for (int i = 0; i < fb.nchunks; i++) {
       ull h = fb.chunks[i];
       if (((pt.mem[h >> 5] >> (2 * (h & 31))) & 3) == 0) {
         pt.mem[h >> 5] += (3LL - pt.wval) << (2 * (h & 31));
-        if ((pt.mem[(h >> 5) & -8] & 15) == 0) {
+        if ((pt.mem[(h >> 5) & -8] & 15) == 0)
           pt.mem[(h >> 5) & -8] += 1 + pt.wbval;
-        }
         r++;
       }
     }
-    
-    #ifdef USE_PTHREADS
+#ifdef USE_PTHREADS
     pthread_mutex_unlock(&(memshards[shard].mutex));
-    #endif
+#endif
     fb.nchunks = 0;
   }
   return r;
@@ -139,7 +129,6 @@ void fillworker::dowork(const puzdef &pd, prunetable &pt) {
     release_global_lock();
     if (w < 0)
       return;
-    
     ull cnt = fillstart(pd, pt, w);
     get_global_lock();
     pt.popped += cnt;
@@ -147,7 +136,6 @@ void fillworker::dowork(const puzdef &pd, prunetable &pt) {
   }
 }
 
-// Optimized filltable - recursive function, no GPU parallelization
 ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
                           int st) {
   ull r = 0;
@@ -166,18 +154,13 @@ ull fillworker::filltable(const puzdef &pd, prunetable &pt, int togo, int sp,
       r += fillflush(pt, shard);
     return r;
   }
-  
   ull mask = canonmask[st];
   const vector<int> &ns = canonnext[st];
-  
-  // Recursive calls - cannot be parallelized with OpenACC effectively
   for (int m = 0; m < (int)pd.moves.size(); m++) {
     const moove &mv = pd.moves[m];
     if ((mask >> mv.cs) & 1)
       continue;
-    
     pd.mul(posns[sp], mv.pos, posns[sp + 1]);
-    
     if (!pd.legalstate(posns[sp + 1]))
       continue;
     r += filltable(pd, pt, togo - 1, sp + 1, ns[mv.cs]);
@@ -277,16 +260,13 @@ void ioqueue::finishall() {
   }
 }
 
-// Pruning table initialization with GPU memory management
 prunetable::prunetable(const puzdef &pd, ull maxmem) {
   pdp = &pd;
   totsize = pd.totsize;
   ull bytesize = 2048;
-  
   while (2 * bytesize <= maxmem &&
          (pd.logstates > 55 || 8 * bytesize < pd.llstates))
     bytesize *= 2;
-  
   ull subbytesize = bytesize;
   for (int i = 0; i < 7; i++) {
     subbytesize >>= 1;
@@ -294,7 +274,6 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
         (pd.logstates > 55 || 8 * (subbytesize + bytesize) < pd.llstates))
       bytesize += subbytesize;
   }
-  
   size = 4 * bytesize;
   shift2 = 2;
   while ((size & (1LL << shift2)) == 0)
@@ -310,42 +289,34 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   shardshift = 0;
   while ((size >> shardshift) > MEMSHARDS)
     shardshift++;
-  
   if (quiet == 0)
     cout << "For memsize " << maxmem << " sh1 " << shift1 << " mul " << memmul
          << " sh2 " << shift2 << " shardshift " << shardshift << endl;
-  
   totpop = 0;
   ptotpop = 0;
   baseval = 0;
   wval = 0;
-  
   cout << "Trying to allocate "
        << (CACHELINESIZE + (bytesize >> 3) * sizeof(ull)) << endl;
-  
   amem = mem = (ull *)calloc(CACHELINESIZE + (bytesize >> 3) * sizeof(ull), 1);
   if (mem == 0)
     error("! could not allocate main memory buffer");
-  
   while (((ull)mem) & (CACHELINESIZE - 1))
     mem++;
   
-  // Create GPU data region for memory array
+  // GPU data management
   ull memsize = (bytesize >> 3);
   #pragma acc enter data copyin(mem[0:memsize])
   
   lookupcnt = 0;
   fillcnt = 0;
   justread = 0;
-  
   for (int i = 0; i < 7; i++)
     dtabs[i] = 0;
-  
   if (!readpt(pd)) {
     if (quiet == 0)
       cout << "Initializing memory in " << duration() << endl << flush;
     baseval = 1;
-    
     filltable(pd, 0);
     filltable(pd, 1);
     filltable(pd, 2);
@@ -358,36 +329,27 @@ prunetable::prunetable(const puzdef &pd, ull maxmem) {
   }
 }
 
-// Standard filltable without nested parallelism
 void prunetable::filltable(const puzdef &pd, int d) {
   popped = 0;
   wbval = min(d, 14);
   ll ofillcnt = fillcnt;
   if (quiet == 0)
     cout << "Filling depth " << d << " val " << wval << flush;
-  
   workchunks = makeworkchunks(pd, d, pd.solved);
   workat = 0;
   int wthreads = setupthreads(pd, *this, workchunks, workerparams);
-  
   for (int t = 0; t < wthreads; t++)
     fillworkers[t].init(pd, d);
-  
-  // Use CPU threads (pthreads) instead of nested GPU parallelism
-  #ifdef USE_PTHREADS
-  for (int i = 1; i < wthreads; i++)
-    spawn_thread(i, fillthreadworker, &(workerparams[i]));
-  fillthreadworker((void *)&workerparams[0]);
-  for (int i = 1; i < wthreads; i++)
-    join_thread(i);
-  #else
+#ifdef USE_PTHREADS
   for (int i = 0; i < wthreads; i++)
-    fillthreadworker((void *)&workerparams[i]);
-  #endif
-  
+    spawn_thread(i, fillthreadworker, &(workerparams[i]));
+  for (int i = 0; i < wthreads; i++)
+    join_thread(i);
+#else
+  fillthreadworker((void *)&workerparams[0]);
+#endif
   for (int i = 0; i < wthreads; i++)
     fillcnt += fillworkers[i].wfillcnt;
-  
   if (quiet == 0) {
     double dur = duration();
     double rate = (fillcnt - ofillcnt) / dur / 1e6;
@@ -395,13 +357,11 @@ void prunetable::filltable(const puzdef &pd, int d) {
          << " rate " << rate << endl
          << flush;
   }
-  
   ptotpop = totpop;
   totpop += popped;
   justread = 0;
 }
 
-// GPU-accelerated checkextend with proper parallel region
 void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
   double prediction = 0;
   if (ptotpop != 0)
@@ -409,13 +369,12 @@ void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
   if ((ignorelookup == 0 && lookupcnt < 3 * fillcnt) || baseval > 100 ||
       prediction > size || (pd.logstates <= 50 && prediction > pd.llstates))
     return;
-  
   if (wval == 2) {
     ull longcnt = (size + 31) >> 5;
     if (quiet == 0)
       cout << "Demoting memory values " << flush;
     
-    // Single parallel region for GPU demotion
+    // GPU-accelerated demotion
     #pragma acc parallel loop present(mem[0:longcnt])
     for (ull i = 0; i < longcnt; i += 8) {
       ull v = mem[i];
@@ -440,7 +399,6 @@ void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
       cout << "in " << duration() << endl << flush;
     wval--;
   }
-  
   if (wval <= 0 && prediction < (size >> 9))
     wval = 0;
   else
@@ -448,4 +406,547 @@ void prunetable::checkextend(const puzdef &pd, int ignorelookup) {
   baseval++;
   filltable(pd, baseval + 1);
   writept(pd);
+}
+
+void prunetable::addsumdat(const puzdef &pd, string &filename) const {
+  ull t = pd.optionssum;
+  if (inputbasename == UNKNOWNPUZZLE)
+    t ^= pd.checksum;
+  if (t == 0)
+    return;
+  filename.push_back('-');
+  filename.push_back('o');
+  while (t) {
+    int v = t % 36;
+    t /= 36;
+    if (v < 10)
+      filename.push_back('0' + v);
+    else
+      filename.push_back('a' + (v - 10));
+  }
+}
+
+string prunetable::makefilename(const puzdef &pd, bool create_dirs) const {
+  const char *cachedir = prune_table_dir(create_dirs);
+  string filename(cachedir, cachedir + strlen(cachedir));
+#ifdef USECOMPRESSION
+  filename += "tws9-" + inputbasename + "-";
+#else
+  filename += "tws8-" + inputbasename + "-";
+#endif
+  if (quarter)
+    filename += "q-";
+  ull bytes = size >> 2;
+  char suffix = 0;
+  if ((bytes & 1023) == 0) {
+    suffix = 'K';
+    bytes >>= 10;
+  }
+  if ((bytes & 1023) == 0) {
+    suffix = 'M';
+    bytes >>= 10;
+  }
+  if ((bytes & 1023) == 0) {
+    suffix = 'G';
+    bytes >>= 10;
+  }
+  if ((bytes & 1023) == 0) {
+    suffix = 'T';
+    bytes >>= 10;
+  }
+  filename += to_string(bytes);
+  if (suffix)
+    filename += suffix;
+  addsumdat(pd, filename);
+  filename += ".dat";
+  return filename;
+}
+
+ull prunetable::calcblocksize(ull *mem, ull longcnt) {
+  ull bits = 0;
+  for (ull i = 0; i < longcnt; i++) {
+    ull v = mem[i];
+    if (v < 16) {
+      bits += codewidths[v + 256];
+    } else {
+      for (int j = 0; j < 8; j++) {
+        bits += codewidths[v & 255];
+        v >>= 8;
+      }
+    }
+  }
+  return ((bits + 7) >> 3);
+}
+
+void prunetable::packblock(ull *mem, ull longcnt, uchar *buf, ull bytecnt) {
+  ull accum = 0;
+  int havebits = 0;
+  ull bytectr = 0;
+  for (ull i = 0; i < longcnt; i++) {
+    ull v = mem[i];
+    if (v < 16) {
+      int cp = v + 256;
+      int cpw = codewidths[cp];
+      if (cpw == 0)
+        error("! internal error in Huffman encoding");
+      while (havebits + cpw > 64) {
+        buf[bytectr++] = accum >> (havebits - 8);
+        if (bytectr > bytecnt)
+          error("! packing issue");
+        havebits -= 8;
+      }
+      accum = (accum << cpw) + codevals[cp];
+      havebits += cpw;
+    } else {
+      for (int j = 0; j < 8; j++) {
+        int cp = v & 255;
+        int cpw = codewidths[cp];
+        if (cpw == 0)
+          error("! internal error in Huffman encoding");
+        while (havebits + cpw > 64) {
+          buf[bytectr++] = accum >> (havebits - 8);
+          if (bytectr > bytecnt)
+            error("! packing issue");
+          havebits -= 8;
+        }
+        accum = (accum << cpw) + codevals[cp];
+        havebits += cpw;
+        v >>= 8;
+      }
+    }
+  }
+  int extra = (8 - havebits) & 7;
+  havebits += extra;
+  accum <<= extra;
+  while (havebits > 0) {
+    buf[bytectr++] = accum >> (havebits - 8);
+    if (bytectr > bytecnt)
+      error("! packing issue 2");
+    havebits -= 8;
+  }
+  if (bytectr != bytecnt)
+    error("! packing issue 3");
+}
+
+static ull getull_swap_unaligned(unsigned char *p) {
+  ull v;
+  memcpy(&v, p, sizeof(v));
+  return bswap64(v);
+}
+
+static void setull_unaligned(unsigned char *p, ull v) {
+  memcpy(p, &v, sizeof(v));
+}
+
+void prunetable::unpackblock(ull *mem, ull longcnt, uchar *block, int) {
+  int havebits = 0;
+  ull accum = 0;
+  ull bitptr = 0;
+  unsigned char *memb = (unsigned char *)mem;
+  longcnt *= 8;
+  for (ll i = longcnt; i > 0;) {
+    int bitsneeded = UNPACKBITS;
+    int k = 0;
+    while (1) {
+      if (havebits < bitsneeded) {
+        accum = getull_swap_unaligned(block + (bitptr >> 3)) &
+                ((0xffffffffffffffffULL) >> (bitptr & 7));
+        havebits = 64 - (bitptr & 7);
+      }
+      auto dc = &(dtabs[k][accum >> (havebits - bitsneeded)]);
+      if (dc->bytewidth > 0) {
+        bitptr += dc->bitwidth;
+        havebits -= dc->bitwidth;
+        accum &= ((1ULL << havebits) - 1);
+        if (i >= 8) {
+          setull_unaligned(memb, dc->d);
+          memb += dc->bytewidth;
+        } else {
+          auto t = dc->d;
+          for (int ii = 0; ii < dc->bytewidth; ii++) {
+            *memb++ = t;
+            t >>= 8;
+          }
+        }
+        i -= dc->bytewidth;
+        break;
+      }
+      bitsneeded += UNPACKBITS;
+      if (bitsneeded > 56)
+        bitsneeded = 56;
+      k++;
+    }
+  }
+}
+
+void prunetable::writeblock(ull *mem, ull longcnt) {
+  ull bytecnt = calcblocksize(mem, longcnt);
+  uchar *buf = (uchar *)malloc(bytecnt);
+  ioqueue.queuepackwork(mem, longcnt, buf, bytecnt);
+}
+
+void prunetable::readblock(ull *mem, ull explongcnt, istream *inf) {
+  unsigned int bytecnt, longcnt;
+  bytecnt = inf->get();
+  bytecnt += inf->get() << 8;
+  bytecnt += inf->get() << 16;
+  bytecnt += inf->get() << 24;
+  longcnt = inf->get();
+  longcnt += inf->get() << 8;
+  longcnt += inf->get() << 16;
+  longcnt += inf->get() << 24;
+  if (longcnt != explongcnt || bytecnt <= 0 || bytecnt > 32 * BLOCKSIZE)
+    error("! I/O error while reading block");
+  uchar *buf = (uchar *)malloc(bytecnt + 8);
+  inf->read((char *)buf, bytecnt);
+  if (inf->fail())
+    error("! I/O error while reading block");
+  ioqueue.queueunpackwork(mem, longcnt, buf, bytecnt);
+}
+
+static ll bytecnts[272];
+struct cntparam {
+  ll s, e;
+  ull *mem;
+} cntparams[MAXTHREADS];
+
+void *cntthreadworker(void *o) {
+  cntparam *wp = (cntparam *)o;
+  ll s = wp->s;
+  ll e = wp->e;
+  ll lbc[272];
+  for (int i = 0; i < 272; i++)
+    lbc[i] = 0;
+  for (ll i = s; i < e; i++) {
+    ull v = wp->mem[i];
+    if (v < 16)
+      lbc[256 + v]++;
+    else {
+      lbc[(unsigned char)v]++;
+      lbc[(unsigned char)(v >> 8)]++;
+      lbc[(unsigned char)(v >> 16)]++;
+      lbc[(unsigned char)(v >> 24)]++;
+      lbc[(unsigned char)(v >> 32)]++;
+      lbc[(unsigned char)(v >> 40)]++;
+      lbc[(unsigned char)(v >> 48)]++;
+      lbc[(unsigned char)(v >> 56)]++;
+    }
+  }
+  get_global_lock();
+  for (int i = 0; i < 272; i++)
+    bytecnts[i] += lbc[i];
+  release_global_lock();
+  return 0;
+}
+
+void prunetable::writept(const puzdef &pd) {
+  if (writeprunetables == 0 || justread ||
+      (writeprunetables != 2 && fillcnt < size / 700))
+    return;
+  ll longcnt = (size + 31) >> 5;
+  if (longcnt % BLOCKSIZE != 0)
+    return;
+#ifdef USECOMPRESSION
+  if (quiet == 0)
+    cout << "Scanning memory for compression information" << flush;
+  for (int i = 0; i < 272; i++)
+    bytecnts[i] = 0;
+#ifdef USE_PTHREADS
+  for (int i = 0; i < numthreads; i++) {
+    ll s = longcnt * i / numthreads;
+    ll e = longcnt * (i + 1) / numthreads;
+    cntparams[i] = {s, e, mem};
+    spawn_thread(i, cntthreadworker, cntparams + i);
+  }
+  for (int i = 0; i < numthreads; i++)
+    join_thread(i);
+#else
+  cntparams[0] = {0, longcnt, mem};
+  cntthreadworker((void *)&cntparams[0]);
+#endif
+  if (quiet == 0)
+    cout << "in " << duration() << endl << flush;
+  set<pair<ll, int>> codes;
+  vector<pair<int, int>> tree;
+  vector<int> depths;
+  for (int i = 0; i < 272; i++)
+    if (bytecnts[i])
+      codes.insert(make_pair(bytecnts[i], i));
+  int nextcode = 272;
+  int maxwidth = 0;
+  ull bitcost = 0;
+  while (codes.size() > 1) {
+    auto a = *(codes.begin());
+    codes.erase(a);
+    auto b = *(codes.begin());
+    codes.erase(b);
+    tree.push_back(make_pair(a.second, b.second));
+    int dep = 1;
+    if (a.second >= 272)
+      dep = 1 + depths[a.second - 272];
+    if (b.second >= 272)
+      dep = max(dep, 1 + depths[b.second - 272]);
+    maxwidth = max(maxwidth, dep);
+    if (maxwidth >= 56)
+      error("! exceeded maxwidth in Huffman encoding; fix the code");
+    depths.push_back(dep);
+    codes.insert(make_pair(a.first + b.first, nextcode));
+    bitcost += a.first + b.first;
+    nextcode++;
+  }
+  if (quiet == 0)
+    cout << "Encoding; max width is " << maxwidth << " bitcost " << bitcost
+         << " compression " << ((64.0 * longcnt) / bitcost) << " in "
+         << duration() << endl;
+  codewidths[nextcode - 1] = 0;
+  codevals[nextcode - 1] = 0;
+  for (int i = 0; i < 272; i++) {
+    codewidths[i] = 0;
+    codevals[i] = 0;
+  }
+  int widthcounts[64];
+  for (int i = 0; i < 64; i++)
+    widthcounts[i] = 0;
+  codewidths[nextcode - 1] = 0;
+  for (int i = nextcode - 1; i >= 272; i--) {
+    int a = tree[i - 272].first;
+    int b = tree[i - 272].second;
+    codewidths[a] = codewidths[i] + 1;
+    codewidths[b] = codewidths[i] + 1;
+  }
+  for (int i = 0; i < 272; i++)
+    widthcounts[codewidths[i]]++;
+  ull widthbases[64];
+  ull at = 0;
+  for (int i = 63; i > 0; i--) {
+    if (widthcounts[i]) {
+      widthbases[i] = at >> (maxwidth - i);
+      at += ((ull)widthcounts[i]) << (maxwidth - i);
+    }
+  }
+  if (at != (1ULL << maxwidth))
+    error("! Bad calculation in codes");
+  for (int i = 0; i < 272; i++)
+    if (codewidths[i]) {
+      codevals[i] = widthbases[codewidths[i]];
+      widthbases[codewidths[i]]++;
+    }
+#endif
+  string filename = makefilename(pd, true);
+  if (quiet == 0)
+    cout << "Writing " << filename << " " << flush;
+  ofstream w;
+  w.open(filename, ios::out | ios::trunc);
+  w.put(SIGNATURE);
+  w.write((char *)&pd.checksum, sizeof(pd.checksum));
+  w.write((char *)&size, sizeof(size));
+  w.write((char *)&shift1, sizeof(shift1));
+  w.write((char *)&shift2, sizeof(shift2));
+  w.write((char *)&memmul, sizeof(memmul));
+  w.write((char *)&popped, sizeof(popped));
+  w.write((char *)&totpop, sizeof(totpop));
+  w.write((char *)&ptotpop, sizeof(ptotpop));
+  w.write((char *)&fillcnt, sizeof(fillcnt));
+  w.write((char *)&totsize, sizeof(totsize));
+  w.write((char *)&baseval, sizeof(baseval));
+  w.write((char *)&hibase, sizeof(hibase));
+  w.write((char *)&wval, sizeof(wval));
+  if (longcnt % BLOCKSIZE != 0)
+    error("Size must be a multiple of block size");
+#ifdef USECOMPRESSION
+  w.write((char *)codewidths, sizeof(codewidths[0]) * 272);
+  ioqueue.initout(this, &w);
+  for (ll i = 0; i < longcnt; i += BLOCKSIZE)
+    writeblock(mem + i, BLOCKSIZE);
+  ioqueue.finishall();
+#else
+  for (ll i = 0; i < longcnt; i += BLOCKSIZE)
+    w.write((char *)(mem + i), BLOCKSIZE * sizeof(ull));
+#endif
+  w.put(SIGNATURE);
+  w.close();
+  if (w.fail())
+    error("! I/O error");
+  if (quiet == 0)
+    cout << "written in " << duration() << endl << flush;
+}
+
+int prunetable::readpt(const puzdef &pd) {
+#ifdef USECOMPRESSION
+  for (int i = 0; i < 272; i++) {
+    codewidths[i] = 0;
+    codevals[i] = 0;
+  }
+#endif
+  string filename = makefilename(pd, false);
+  ifstream r;
+  r.open(filename, ifstream::in);
+  if (r.fail())
+    return 0;
+  if (quiet == 0)
+    cout << "Reading " << filename << " " << flush;
+  if (r.get() != SIGNATURE) {
+    warn("! first byte not signature");
+    return 0;
+  }
+  ull checksum = 0;
+  r.read((char *)&checksum, sizeof(checksum));
+  if (r.fail())
+    error("! I/O error reading pruning table");
+  if (checksum != pd.checksum) {
+    if (quiet)
+      cerr << "Puzzle definition appears to have changed; recreating pruning "
+              "table"
+           << endl;
+    else
+      cout << "Puzzle definition appears to have changed; recreating pruning "
+              "table"
+           << endl;
+    r.close();
+    return 0;
+  }
+  ull temp = 0;
+  r.read((char *)&temp, sizeof(temp));
+  if (temp != size) {
+    cout << "Pruning table size is different; recreating pruning table" << endl;
+    r.close();
+    return 0;
+  }
+  r.read((char *)&shift1, sizeof(shift1));
+  r.read((char *)&shift2, sizeof(shift2));
+  r.read((char *)&memmul, sizeof(memmul));
+  r.read((char *)&popped, sizeof(popped));
+  r.read((char *)&totpop, sizeof(totpop));
+  r.read((char *)&ptotpop, sizeof(ptotpop));
+  r.read((char *)&fillcnt, sizeof(fillcnt));
+  r.read((char *)&totsize, sizeof(totsize));
+  r.read((char *)&baseval, sizeof(baseval));
+  r.read((char *)&hibase, sizeof(hibase));
+  r.read((char *)&wval, sizeof(wval));
+#ifdef USECOMPRESSION
+  r.read((char *)codewidths, sizeof(codewidths[0]) * 272);
+  if (r.fail()) {
+    warn("I/O error in reading pruning table");
+    r.close();
+    return 0;
+  }
+  int widthcounts[64];
+  for (int i = 0; i < 64; i++)
+    widthcounts[i] = 0;
+  int maxwidth = 1;
+  for (int i = 0; i < 272; i++) {
+    if (codewidths[i] >= 56)
+      error("! bad code widths in pruning table file");
+    maxwidth = max(maxwidth, (int)codewidths[i]);
+    widthcounts[codewidths[i]]++;
+  }
+  ull widthbases[64];
+  ull at = 0;
+  for (int i = 63; i > 0; i--) {
+    if (widthcounts[i]) {
+      widthbases[i] = at >> (maxwidth - i);
+      at += ((ull)widthcounts[i]) << (maxwidth - i);
+    }
+  }
+  if (at != (1ULL << maxwidth))
+    error("! Bad codewidth sum in codes");
+  for (int i = 0; i < 272; i++)
+    if (codewidths[i]) {
+      codevals[i] = widthbases[codewidths[i]];
+      widthbases[codewidths[i]]++;
+    }
+  at = 0;
+  int theight[8];
+  for (int i = 0; i < 8; i++)
+    theight[i] = 0;
+  for (int i = 63; i > 0; i--) {
+    if (widthcounts[i]) {
+      widthbases[i] = at >> (maxwidth - i);
+      at += ((ull)widthcounts[i]) << (maxwidth - i);
+    }
+    if ((i % UNPACKBITS) == 1) {
+      int t = maxwidth - i - UNPACKBITS + 1;
+      if (t < 0) {
+        theight[i / UNPACKBITS] = (at << -t);
+      } else {
+        theight[i / UNPACKBITS] = (at + (1LL << t) - 1) >> t;
+      }
+    }
+  }
+  for (int i = 0; i < 8; i++)
+    if (theight[i])
+      dtabs[i] =
+          (struct decompinfo *)calloc(theight[i], sizeof(struct decompinfo));
+  at = 0;
+  int twidth = (maxwidth + UNPACKBITS - 1) / UNPACKBITS * UNPACKBITS;
+  for (int i = 63; i > 0; i--) {
+    if (widthcounts[i]) {
+      for (int cp = 0; cp < 272; cp++)
+        if (codewidths[cp] == i) {
+          int k = (i - 1) / UNPACKBITS;
+          int incsh = twidth - UNPACKBITS * (k + 1);
+          ull inc = 1LL << incsh;
+          ull nextat = at + (1LL << (twidth - i));
+          while (at < nextat) {
+            if (cp >= 256) {
+              dtabs[k][at >> incsh] = {(unsigned int)(cp - 256), (uchar)i, 8};
+            } else {
+              dtabs[k][at >> incsh] = {(unsigned int)cp, (uchar)i, 1};
+            }
+            at += inc;
+          }
+          at = nextat;
+        }
+    }
+  }
+  decompinfo *expander =
+      (decompinfo *)malloc(theight[0] * sizeof(struct decompinfo));
+  memcpy(expander, dtabs[0], theight[0] * sizeof(struct decompinfo));
+  for (int k = 0; k < 8; k++) {
+    if (UNPACKBITS * (k + 1) > 56)
+      break;
+    if (theight[k])
+      for (int i = 0; i < theight[k]; i++) {
+        auto dc = &(dtabs[k][i]);
+        if (dc->bitwidth && dc->bytewidth < 4) {
+          int xtra = (k + 1) * UNPACKBITS - dc->bitwidth;
+          int added = 0;
+          while (xtra > 0) {
+            int leftover = i & ((1 << xtra) - 1);
+            auto dc2 = &(expander[leftover << (UNPACKBITS - xtra)]);
+            if (dc2->bitwidth == 0 || dc2->bitwidth > xtra ||
+                dc->bytewidth + dc2->bytewidth > 4)
+              break;
+            xtra -= dc2->bitwidth;
+            added++;
+            dc->bytewidth += dc2->bytewidth;
+            dc->d += dc2->d << (8 * added);
+            dc->bitwidth += dc2->bitwidth;
+          }
+        }
+      }
+  }
+  free(expander);
+  ll longcnt = (size + 31) >> 5;
+  if (longcnt % BLOCKSIZE != 0)
+    error("! when reading, expected multiple of BLOCKSIZE");
+  ioqueue.initin(this, &r);
+  for (ll i = 0; i < longcnt; i += BLOCKSIZE)
+    readblock(mem + i, BLOCKSIZE, &r);
+  ioqueue.finishall();
+#else
+  ll longcnt = (size + 31) >> 5;
+  if (longcnt % BLOCKSIZE != 0)
+    error("! when reading, expected multiple of BLOCKSIZE");
+  for (ll i = 0; i < longcnt; i += BLOCKSIZE)
+    r.read((char *)(mem + i), BLOCKSIZE * sizeof(ull));
+#endif
+  int tv = r.get();
+  if (tv != SIGNATURE)
+    error("! I/O error reading final signature");
+  r.close();
+  if (quiet == 0)
+    cout << "read in " << duration() << endl << flush;
+  justread = 1;
+  return 1;
 }
