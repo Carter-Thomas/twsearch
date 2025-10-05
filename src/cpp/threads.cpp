@@ -3,6 +3,7 @@
 #include <pthread.h>
 #endif
 #include <openacc.h>
+#include <algorithm>
 
 int numthreads = 1;
 #ifdef USE_PTHREADS
@@ -15,9 +16,6 @@ void init_mutex() {
   #ifdef USE_PTHREADS
   pthread_mutex_init(&mmutex, NULL);
   #endif
-  
-  // Initialize GPU device
-  #pragma acc init
 }
 
 void get_global_lock() {
@@ -49,25 +47,14 @@ void init_threads() {
     pthread_mutex_init(&(memshards[i].mutex), NULL);
   #endif
   
-  // Initialize GPU for multi-threaded usage
-  #pragma acc init
+  // Initialize OpenACC runtime
+  // Query available GPU devices
+  acc_device_t device_type = acc_get_device_type();
+  int num_devices = acc_get_num_devices(device_type);
   
-  // Set number of GPU gangs/workers based on hardware
-  int num_devices = acc_get_num_devices(acc_device_default);
   if (num_devices > 0) {
-    acc_set_device_num(0, acc_device_default);
-    
-    // Query GPU properties and adjust thread count accordingly
-    int gpu_cores = acc_get_property(0, acc_device_default, acc_property_multiprocessors);
-    int gpu_threads = acc_get_property(0, acc_device_default, acc_property_threads);
-    
-    if (gpu_cores > 0 && gpu_threads > 0) {
-      // Adjust numthreads based on GPU capabilities if needed
-      // This is a heuristic - you may want to tune this
-      int gpu_parallel = min(gpu_cores * 32, MAXTHREADS);
-      if (numthreads > gpu_parallel) {
-        numthreads = gpu_parallel;
-      }
-    }
+    // Set the default device to the first GPU
+    acc_set_device_num(0, device_type);
+    acc_init(device_type);
   }
 }
